@@ -18,13 +18,13 @@
 // values pgx cannot parse, such as an invalid sslmode, fail with the parse
 // error.
 //
-// The result is a *database.DB: lifecycle wiring, readiness, and the query
-// surface come from the base package, and the [Provider] constant supports
-// typed selection at the composition root.
+// The result is a *database.DB: lifecycle wiring, readiness, and everything
+// else the base package offers come with it, and the [Provider] constant
+// supports typed selection in the composition root.
 //
 // # Dialect
 //
 // The dialect names itself "postgres", renders bind placeholders as $1, $2,
-// …, and maps errors as the identity at the connectivity slice —
-// classification of constraint violations arrives with the write surface.
+// …, and returns driver errors unchanged; classification of constraint
+// violations arrives with the write path.
 package postgres

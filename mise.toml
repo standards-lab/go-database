@@ -1,0 +1,63 @@
+[tools]
+go = "1.26"
+golangci-lint = "latest"
+
+# Space-separated list of module directories, kept in sync with the go.work
+# use-list and the ci.yml matrix. "." is the base module; provider sub-modules
+# are added as they are built.
+[env]
+GO_MODULES = ". postgres"
+
+[tasks.build]
+description = "Build all modules"
+run = '''
+set -e
+for mod in $GO_MODULES; do
+  echo "==> build: $mod"
+  (cd "$mod" && go build ./...)
+done
+'''
+
+[tasks.test]
+description = "Run tests across all modules"
+run = '''
+set -e
+for mod in $GO_MODULES; do
+  echo "==> test: $mod"
+  (cd "$mod" && go test -race ./...)
+done
+'''
+
+[tasks.vet]
+description = "Run go vet across all modules"
+run = '''
+set -e
+for mod in $GO_MODULES; do
+  echo "==> vet: $mod"
+  (cd "$mod" && go vet ./...)
+done
+'''
+
+[tasks.fmt]
+description = "Format all Go source"
+run = "gofmt -w ."
+
+[tasks.tidy]
+description = "Run go mod tidy across all modules"
+run = '''
+set -e
+for mod in $GO_MODULES; do
+  echo "==> tidy: $mod"
+  (cd "$mod" && go mod tidy)
+done
+'''
+
+[tasks.lint]
+description = "Run golangci-lint across all modules"
+run = '''
+set -e
+for mod in $GO_MODULES; do
+  echo "==> lint: $mod"
+  (cd "$mod" && golangci-lint run ./...)
+done
+'''
