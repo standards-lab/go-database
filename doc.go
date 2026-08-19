@@ -1,9 +1,9 @@
 // Package database provides the SQL data layer's dialect-neutral core: a
 // lifecycle-integrated wrapper over a database/sql connection pool and the
-// dialect seam its providers implement. The package is stdlib-plus-config
-// only; every driver lives in a provider sub-module (database/postgres) that
-// constructs the pool and supplies the dialect, so a consumer imports its
-// provider once, at the composition root.
+// dialect seam its providers implement. The package depends on the standard
+// library and go-core's config package alone; every driver lives in a
+// provider sub-module (postgres) that constructs the pool and supplies the
+// dialect, so a consumer imports its provider once, at the composition root.
 //
 // # Wrapper
 //
@@ -39,12 +39,12 @@
 //
 // # Dialect
 //
-// [Dialect] is the whole provider surface the base needs: a name, the bind
-// placeholder renderer, and the driver error mapper. At the connectivity
-// slice MapError is the identity; query surfaces in later slices route SQL
-// rendering and error classification through the seam, which is what keeps
-// them dialect-neutral. Providers are selected by typed construction — a
-// [Provider] constant and a constructor per sub-module, no registry.
+// [Dialect] is the interface a provider implements for the base: a name, the
+// bind placeholder renderer, and the driver error mapper. MapError returns
+// the error unchanged today; as the base generates SQL and classifies errors,
+// both route through the interface, which is what keeps them dialect-neutral.
+// Providers are selected by typed construction — a [Provider] constant and a
+// constructor per provider, no registry.
 //
 // # Configuration
 //

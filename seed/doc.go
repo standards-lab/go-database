@@ -3,7 +3,7 @@
 // load function per table, and the step order — and the runner owns the
 // mechanics: format selection by file extension, decoding, one transaction
 // per step, and the outcome log. The package is stdlib-only, so it lives in
-// the base library beside database.
+// the base module beside database.
 //
 // # Steps
 //
