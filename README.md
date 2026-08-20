@@ -1,16 +1,19 @@
 # go-database
 
-Go database capability for Standards Lab: the SQL data layer's standard tier, reference-data
-seeding, and the Postgres provider.
+SQL infrastructure library for Standards Lab's Go Minimal standard: the data layer's standard
+tier, reference-data seeding, and the Postgres provider.
 
 `github.com/standards-lab/go-database` is the base module, holding the `database` package at its
 root and `seed` beside it. `github.com/standards-lab/go-database/postgres` is a nested sub-module
 that pins the driver and is released on its own tags.
 
-## Target standard
+## Standard
 
-`go-database` is a capability repository of `go-minimal`, the minimal-dependency Go standard. Its
-repository-level principles:
+`go-database` is an infrastructure library of
+[Go Minimal](https://github.com/standards-lab/docs/blob/main/standards/go-minimal/index.md), the
+minimal-dependency Go standard, and its design is documented on the standard's
+[go-database page](https://github.com/standards-lab/docs/blob/main/standards/go-minimal/go-database/index.md).
+Its repository-level principles:
 
 - The base module depends on the standard library and `go-core`; the driver enters a consumer's
   graph only through the `postgres` sub-module, imported once at the composition root.
@@ -22,7 +25,7 @@ repository-level principles:
 ## Packages
 
 - `database` — the dialect-neutral core: a lifecycle-integrated wrapper over a `database/sql` pool,
-  the `Dialect` seam providers implement, the capability's configuration block, and the error
+  the `Dialect` interface providers implement, the service's configuration block, and the error
   sentinels.
 - `seed` — loads reference data from seed files, one transaction per step, with the decode format
   selected by file extension.
