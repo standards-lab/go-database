@@ -5,6 +5,14 @@ are documented here. The format follows [Keep a Changelog](https://keepachangelo
 and the module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). This
 changelog covers this sub-module only; the base module keeps its own.
 
+## [v0.1.1] - 2026-08-24
+
+### Changed
+
+- The go-database pin moves to v0.1.1, carrying go-core v0.3.0, and the module builds on
+  Go 1.27 (from 1.26), aligning it with the rest of the standard's modules. No provider
+  changes.
+
 ## [v0.1.0] - 2026-08-19
 
 The first release of the PostgreSQL provider, against `github.com/standards-lab/go-database v0.1.0`.
