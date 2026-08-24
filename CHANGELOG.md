@@ -5,6 +5,16 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the module
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). This changelog covers the base module
 only; the `postgres` sub-module keeps its own.
 
+## [v0.1.1] - 2026-08-24
+
+### Changed
+
+- The go-core pin moves to v0.3.0, which adds the `process` package and builds on Go 1.27.
+  Nothing in the module uses the new package; the pin is the committed steady state for
+  consumers building on this release.
+- The module builds on Go 1.27 (from 1.26), aligning it with the rest of the standard's
+  modules.
+
 ## [v0.1.0] - 2026-08-19
 
 The first release of the database capability: the `database` and `seed` packages. The module
