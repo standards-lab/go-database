@@ -5,6 +5,30 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the module
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). This changelog covers the base module
 only; the `postgres` sub-module keeps its own.
 
+## [v0.2.0] - 2026-08-25
+
+### Added
+
+- `query` — the persistence query vocabulary: standard SQL composed as Go values, rendered
+  through the provider's `Dialect`, in two levels. The composition core is a sealed
+  standard-SQL AST — expressions (`Col` preserving identifier parts, `Raw` as the deliberate
+  escape hatch, `Val`, `Fn`), predicates with the full comparison suite (`Eq` through `Le`,
+  `Like`, `In` with values or a subquery, null tests, `And`/`Or`/`Not`), joins, recursive
+  CTEs, and set operations — with `Select` and `Compound` as struct values rendered by one
+  walker: placeholders through `Dialect.Placeholder`, bound arguments in encounter order, and
+  a structural defect wrapping the `ErrInvalidStatement` sentinel. Portability is structural:
+  table aliases render without `AS`, compound branches without parentheses, `WITH` belongs to
+  the outermost statement, and paging is the bound SQL:2008 `OFFSET/FETCH` form under a
+  required ORDER BY. Where an engine lacks a standard form, an optional dialect extension
+  renders it — `PagingRenderer`, with `Writer` as its surface, is the first — and the
+  `Dialect` interface itself is unchanged. The read vocabulary sits on top: `Projection`
+  (name-to-expression fields, one key field, hoisted CTEs) and `Directives` (1-based page,
+  sorts, operator-keyed filters, plus a composed `Predicate` door) lower onto the core through
+  `Projection.Statements`, which returns the count and page statements over one WHERE clause.
+  An unknown field or operator is a typed error the consumer maps — `UnknownFieldError`,
+  `UnknownOperatorError` — and the key field joins every ORDER BY as the tie-breaker, so
+  offset paging is stable.
+
 ## [v0.1.1] - 2026-08-24
 
 ### Changed
