@@ -6,6 +6,9 @@ on:
       - 'v*'
       - '**/v*'
 
+concurrency:
+  group: release-${{ github.ref }}
+
 permissions:
   contents: write
 
