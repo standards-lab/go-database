@@ -1,15 +1,6 @@
-package query
+package operation
 
-import (
-	"errors"
-	"fmt"
-)
-
-// ErrInvalidStatement classifies a statement that cannot be rendered — an
-// empty select list, a derived table without an alias, paging without ORDER
-// BY. It is wrapped with the specific defect, so errors.Is matches the class
-// while the message names the fix.
-var ErrInvalidStatement = errors.New("invalid query statement")
+import "fmt"
 
 // FieldUse names the directive position where a projected field was
 // referenced, carried by [UnknownFieldError].

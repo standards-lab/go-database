@@ -1,8 +1,4 @@
-package query
-
-type tableNode interface {
-	render(r *renderer)
-}
+package ast
 
 // TableRef is a FROM clause element: a named table, an aliased derived
 // table, or a join tree built by the join methods. The zero value fails the
@@ -74,67 +70,4 @@ func (t TableRef) join(kind string, right TableRef, on Predicate) TableRef {
 			on:    on.node,
 		},
 	}
-}
-
-type namedTable struct {
-	name  string
-	alias string
-}
-
-func (n namedTable) render(r *renderer) {
-	if n.name == "" {
-		r.fail("empty table name")
-		return
-	}
-	r.write(n.name)
-	if n.alias != "" {
-		r.write(" " + n.alias)
-	}
-}
-
-type derivedTable struct {
-	q     Query
-	alias string
-}
-
-func (n derivedTable) render(r *renderer) {
-	if n.q == nil {
-		r.fail("derived table missing its query")
-		return
-	}
-	if n.alias == "" {
-		r.fail("derived table requires an alias")
-		return
-	}
-	r.write("(")
-	n.q.render(r, modeSub)
-	r.write(") " + n.alias)
-}
-
-type joinedTable struct {
-	kind        string
-	left, right tableNode
-	on          exprNode
-}
-
-func (n joinedTable) render(r *renderer) {
-	if n.left == nil || n.right == nil {
-		r.fail("join missing a side")
-		return
-	}
-	if n.on == nil {
-		r.fail("join missing its ON predicate")
-		return
-	}
-	n.left.render(r)
-	r.write(" " + n.kind + " ")
-	n.right.render(r)
-	r.write(" ON ")
-	r.expr(n.on)
-}
-
-type invalidRef string
-
-func (n invalidRef) render(r *renderer) {
-	r.fail(string(n))
 }
