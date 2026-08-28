@@ -4,7 +4,7 @@ go 1.27
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/standards-lab/go-database v0.1.1
+	github.com/standards-lab/go-database v0.3.0
 )
 
 require (
