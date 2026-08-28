@@ -5,6 +5,51 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the module
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). This changelog covers the base module
 only; the `postgres` sub-module keeps its own.
 
+## [v0.3.0] - 2026-08-28
+
+### Changed
+
+- **Breaking:** the `query` package is reorganized into the library's layer ontology. The
+  statement layer is now `ast` — the standard-SQL AST and its renderer — and the contract
+  layer moves to the new `operation` package: `Projection` (with `Field` and the builders),
+  `Directives`, and the typed field-contract errors. Statements render with
+  `Render(d) (ast.SQL, error)` in place of `SQL(d) (string, []any, error)`; `ast.SQL` is the
+  rendered unit (`Text`, `Args`). The list operation is `Projection.List`, returning the
+  `List` envelope (`Count`, `Page`) in place of `Statements`.
+- **Breaking:** the `Query` interface narrows to the query expressions — `Select` and
+  `Compound`, the statements valid inside a CTE, a derived table, a subquery, and
+  `INSERT ... SELECT` — enforced at compile time; the write statements never implement it.
+- Rendering validates before it emits, at every scope: each statement, clause, and loop
+  iteration checks the invariants decidable at its entry before its first write, so the
+  outermost defect wins under the first-failure rule.
+
+### Added
+
+- `ast` — the write statements `Insert`, `Update` (with `Assignment`), and `Delete`: plain
+  table names, operand-lifting values, the same predicate trees for WHERE, rendering only at
+  the outermost position. The `Returning` clause is the first declared-native feature:
+  rendered only through the `ReturningRenderer` capability, failing with the typed
+  `UnsupportedFeatureError` on a dialect without it — the capability pattern's second
+  direction beside `PagingRenderer`'s standard-emission override. `Writer` gains `Column`;
+  `Expression` gains `Empty`.
+- `operation` — the query side's single-row read `Projection.One`, resolving the field and
+  its typed unknown-field error at the library; the promoted structural builders `Columns`
+  and `Fields`; the promoted `RecursivePath` computed-field pattern; and the command side:
+  `Insertion` (the identity-returning insert), `GuardedUpdate` and `GuardedDelete` on the
+  optimistic-concurrency contract, with `Guard` naming the consumer's version column and
+  expected version, and the `Guarded` command-and-check envelope in pure standard SQL.
+- `exec` — the execution layer, the only layer touching database/sql at runtime: `Scan`, the
+  query runners `List`, `One`, and `Query` over the new `Session` seam, and the command
+  runners `Insert` (returning `Identity`), `Update` (returning the deterministic new
+  version), and `Delete`, mapping guard outcomes to `sql.ErrNoRows` and
+  `ErrVersionMismatch` and routing every driver error through the dialect's `MapError`.
+- `database` — the `Session` interface implemented by `DB` and the new `Tx`; `Begin`,
+  `ExecTx` as the unit-of-work helper, and `Tx.Commit` mapping commit errors through the
+  dialect, so violations deferred to COMMIT are classified. The error taxonomy grows the
+  four constraint-class sentinels (`ErrUniqueViolation`, `ErrForeignKeyViolation`,
+  `ErrCheckViolation`, `ErrNotNullViolation`), `ErrVersionMismatch`, and `ConstraintError`
+  carrying the constraint name while unwrapping to both the class and the driver error.
+
 ## [v0.2.0] - 2026-08-25
 
 ### Added

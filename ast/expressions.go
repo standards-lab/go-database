@@ -1,16 +1,6 @@
-package query
+package ast
 
 import "strings"
-
-type exprNode interface {
-	render(r *renderer)
-}
-
-// operand is implemented by the value types that wrap a node — [Expression]
-// and [Predicate] — so [lift] accepts them without naming them.
-type operand interface {
-	operand() exprNode
-}
 
 // Expression is one standard-SQL expression: a column reference, a bound
 // value, a function call, a raw fragment, or a subquery. The zero value is
@@ -72,88 +62,14 @@ func (e Expression) As(alias string) Column {
 	return Column{Expr: e, Alias: alias}
 }
 
+// Empty reports whether the expression is the zero value. Layers above the
+// package use it to validate their contracts before rendering.
+func (e Expression) Empty() bool {
+	return e.node == nil
+}
+
 // Column is one select-list entry: an expression and its optional alias.
 type Column struct {
 	Expr  Expression
 	Alias string
-}
-
-// lift turns an operand into a node: expressions and predicates pass
-// through, a [Query] becomes a parenthesized subquery, and any other Go
-// value binds as a parameter.
-func lift(v any) exprNode {
-	switch x := v.(type) {
-	case operand:
-		return x.operand()
-	case Query:
-		return subqueryNode{x}
-	default:
-		return valueNode{v}
-	}
-}
-
-type colNode []string
-
-func (n colNode) render(r *renderer) {
-	if len(n) == 0 {
-		r.fail("empty column reference")
-		return
-	}
-	for i, part := range n {
-		if part == "" {
-			r.fail("empty column reference part")
-			return
-		}
-		if i > 0 {
-			r.write(".")
-		}
-		r.write(part)
-	}
-}
-
-type rawNode string
-
-func (n rawNode) render(r *renderer) {
-	if n == "" {
-		r.fail("empty raw fragment")
-		return
-	}
-	r.write(string(n))
-}
-
-type valueNode struct {
-	v any
-}
-
-func (n valueNode) render(r *renderer) {
-	r.bind(n.v)
-}
-
-type fnNode struct {
-	name string
-	args []exprNode
-}
-
-func (n fnNode) render(r *renderer) {
-	if n.name == "" {
-		r.fail("empty function name")
-		return
-	}
-	r.write(n.name)
-	r.write("(")
-	for i, a := range n.args {
-		if i > 0 {
-			r.write(", ")
-		}
-		r.expr(a)
-	}
-	r.write(")")
-}
-
-type subqueryNode struct{ q Query }
-
-func (n subqueryNode) render(r *renderer) {
-	r.write("(")
-	n.q.render(r, modeSub)
-	r.write(")")
 }

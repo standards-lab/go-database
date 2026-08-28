@@ -146,8 +146,8 @@ func TestDialect(t *testing.T) {
 		t.Errorf("Placeholder(12) = %q, want $12", got)
 	}
 
-	// MapError is identity at this rung: nothing is classified, nothing is
-	// swallowed, and sql.ErrNoRows flows through untouched.
+	// An error outside the classified constraint classes passes through
+	// unchanged: nothing is swallowed, and sql.ErrNoRows flows untouched.
 	cause := errors.New("driver failure")
 	if got := d.MapError(cause); got != cause {
 		t.Errorf("MapError(err) = %v, want the error unchanged", got)

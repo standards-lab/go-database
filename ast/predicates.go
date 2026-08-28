@@ -1,4 +1,4 @@
-package query
+package ast
 
 // Predicate is a boolean expression: a comparison, a null test, a
 // membership test, or a combination. The zero value is empty — an absent
@@ -96,78 +96,4 @@ func combine(op string, preds []Predicate) Predicate {
 	default:
 		return Predicate{node: logicNode{op: op, preds: nodes}}
 	}
-}
-
-type compareNode struct {
-	op          string
-	left, right exprNode
-}
-
-func (n compareNode) render(r *renderer) {
-	r.expr(n.left)
-	r.write(" " + n.op + " ")
-	r.expr(n.right)
-}
-
-type nullNode struct {
-	expr exprNode
-	not  bool
-}
-
-func (n nullNode) render(r *renderer) {
-	r.expr(n.expr)
-	if n.not {
-		r.write(" IS NOT NULL")
-	} else {
-		r.write(" IS NULL")
-	}
-}
-
-type inNode struct {
-	expr  exprNode
-	items []exprNode
-	sub   Query
-}
-
-func (n inNode) render(r *renderer) {
-	r.expr(n.expr)
-	r.write(" IN (")
-	if n.sub != nil {
-		n.sub.render(r, modeSub)
-	} else {
-		if len(n.items) == 0 {
-			r.fail("empty IN list")
-		}
-		for i, item := range n.items {
-			if i > 0 {
-				r.write(", ")
-			}
-			r.expr(item)
-		}
-	}
-	r.write(")")
-}
-
-type logicNode struct {
-	op    string
-	preds []exprNode
-}
-
-func (n logicNode) render(r *renderer) {
-	r.write("(")
-	for i, p := range n.preds {
-		if i > 0 {
-			r.write(" " + n.op + " ")
-		}
-		r.expr(p)
-	}
-	r.write(")")
-}
-
-type notNode struct{ pred exprNode }
-
-func (n notNode) render(r *renderer) {
-	r.write("NOT (")
-	r.expr(n.pred)
-	r.write(")")
 }

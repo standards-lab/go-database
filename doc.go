@@ -37,14 +37,26 @@
 // returns — at the cost of one bounded round trip per probe. [DB.Ping] is the
 // same verification under the caller's context and bound.
 //
+// # Sessions and transactions
+//
+// [Session] is the querying surface the exec package's read runners take,
+// implemented by both [DB] and [Tx], so the same reads run against the pool
+// or inside a transaction and the dialect travels with the session. The
+// consumer owns the transaction boundary: [DB.Begin] opens a [Tx], write
+// runners take *Tx concretely so the compiler enforces the boundary, and
+// [ExecTx] wraps one unit of work — commit on success, rollback on the
+// unit's error. [Tx.Commit] routes its error through the dialect's
+// MapError, the one place a violation deferred to COMMIT can be classified.
+//
 // # Dialect
 //
 // [Dialect] is the interface a provider implements for the base: a name, the
-// bind placeholder renderer, and the driver error mapper. MapError returns
-// the error unchanged today; as the base generates SQL and classifies errors,
-// both route through the interface, which is what keeps them dialect-neutral.
-// Providers are selected by typed construction — a [Provider] constant and a
-// constructor per provider, no registry.
+// bind placeholder renderer, and the driver error mapper. The ast package's
+// rendering and the providers' error classification both route through it,
+// which is what keeps the layers above dialect-neutral. Providers are
+// selected by typed construction — a [Provider] constant and a constructor
+// per provider, no registry — and opt into the ast package's render
+// capabilities per feature.
 //
 // # Configuration
 //
@@ -61,8 +73,14 @@
 //
 // # Errors
 //
-// [ErrNotReady] and [ErrConnectionFailed] are the package's two sentinels,
-// wrapped in the dual form fmt.Errorf("%w: %w", sentinel, err) so errors.Is
-// classifies while the driver's error stays recoverable. sql.ErrNoRows is
-// never mapped; it flows to the boundary unchanged.
+// The package owns the error taxonomy consumers match on. [ErrNotReady] and
+// [ErrConnectionFailed] classify service conditions, wrapped in the dual
+// form fmt.Errorf("%w: %w", sentinel, err) so errors.Is classifies while
+// the driver's error stays recoverable. The four constraint classes —
+// [ErrUniqueViolation], [ErrForeignKeyViolation], [ErrCheckViolation],
+// [ErrNotNullViolation] — reach the caller inside a [ConstraintError] from
+// a provider's MapError, carrying the constraint name when the driver
+// exposes it; [ErrVersionMismatch] classifies a failed optimistic-
+// concurrency guard. sql.ErrNoRows is never mapped; it flows to the
+// boundary unchanged.
 package database

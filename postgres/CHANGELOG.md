@@ -5,6 +5,22 @@ are documented here. The format follows [Keep a Changelog](https://keepachangelo
 and the module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). This
 changelog covers this sub-module only; the base module keeps its own.
 
+## [v0.2.0] - 2026-08-28
+
+### Added
+
+- `MapError` classifies SQLSTATE class-23 constraint violations into the base package's
+  sentinels — unique (23505), foreign-key (23503), check (23514), not-null (23502) — through
+  a `ConstraintError` carrying the constraint name pgx exposes structurally; every other
+  error, `sql.ErrNoRows` included, passes through unchanged.
+- The dialect implements `ast.ReturningRenderer`, the declared-native returning capability,
+  emitting the postgres `RETURNING` form for the write statements.
+
+### Changed
+
+- The go-database pin moves to v0.3.0, the release carrying the `ast`/`operation`/`exec`
+  layer ontology this provider's capabilities plug into.
+
 ## [v0.1.1] - 2026-08-24
 
 ### Changed

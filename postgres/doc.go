@@ -24,7 +24,12 @@
 //
 // # Dialect
 //
-// The dialect names itself "postgres", renders bind placeholders as $1, $2,
-// …, and returns driver errors unchanged; classification of constraint
-// violations arrives with the write path.
+// The dialect names itself "postgres" and renders bind placeholders as $1,
+// $2, …. MapError classifies SQLSTATE class-23 constraint violations into
+// the base package's sentinels — unique, foreign-key, check, not-null —
+// through a ConstraintError carrying the violated constraint's name; every
+// other error, sql.ErrNoRows included, passes through unchanged. The
+// dialect's declared native reach beyond the standard core is the returning
+// clause: it implements ast.ReturningRenderer, emitting the postgres
+// RETURNING form for the write statements.
 package postgres
