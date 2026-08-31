@@ -5,6 +5,8 @@ are documented here. The format follows [Keep a Changelog](https://keepachangelo
 and the module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). This
 changelog covers this sub-module only; the base module keeps its own.
 
+## [Unreleased]
+
 ## [v0.2.0] - 2026-08-28
 
 ### Added
@@ -43,3 +45,8 @@ The first release of the PostgreSQL provider, against `github.com/standards-lab/
   dialect names itself, renders `$n` placeholders, and returns driver errors unchanged;
   classifying constraint violations arrives with the write path. `postgres.Provider` types the
   selection constant.
+
+[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/v0.2.0...HEAD
+[v0.2.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.1.1...postgres/v0.2.0
+[v0.1.1]: https://github.com/standards-lab/go-database/compare/postgres/v0.1.0...postgres/v0.1.1
+[v0.1.0]: https://github.com/standards-lab/go-database/releases/tag/postgres/v0.1.0

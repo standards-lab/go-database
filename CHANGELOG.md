@@ -5,6 +5,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the module
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). This changelog covers the base module
 only; the `postgres` sub-module keeps its own.
 
+## [Unreleased]
+
 ## [v0.3.0] - 2026-08-28
 
 ### Changed
@@ -109,3 +111,9 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   construction, with no registry and no `init`; the strict `JSON` format ships with the package,
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
+
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.3.0...HEAD
+[v0.3.0]: https://github.com/standards-lab/go-database/compare/v0.2.0...v0.3.0
+[v0.2.0]: https://github.com/standards-lab/go-database/compare/v0.1.1...v0.2.0
+[v0.1.1]: https://github.com/standards-lab/go-database/compare/v0.1.0...v0.1.1
+[v0.1.0]: https://github.com/standards-lab/go-database/releases/tag/v0.1.0
