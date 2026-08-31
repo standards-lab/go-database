@@ -30,6 +30,18 @@ jobs:
         working-directory: ${{ matrix.module }}
         run: go vet ./...
 
+      - name: gofmt
+        if: ${{ hashFiles(format('{0}/go.mod', matrix.module)) != '' }}
+        working-directory: ${{ matrix.module }}
+        run: |
+          unformatted=$(gofmt -l .)
+          [ -z "$unformatted" ] || { echo "$unformatted"; exit 1; }
+
+      - name: go mod tidy -diff
+        if: ${{ hashFiles(format('{0}/go.mod', matrix.module)) != '' }}
+        working-directory: ${{ matrix.module }}
+        run: go mod tidy -diff
+
       - name: go test -race
         if: ${{ hashFiles(format('{0}/go.mod', matrix.module)) != '' }}
         working-directory: ${{ matrix.module }}
@@ -50,5 +62,5 @@ jobs:
         if: ${{ hashFiles(format('{0}/go.mod', matrix.module)) != '' }}
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.13.2
           working-directory: ${{ matrix.module }}
