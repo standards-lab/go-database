@@ -1,7 +1,7 @@
 # go-database
 
-The SQL infrastructure library of Go Minimal, the Standards Lab organization's minimal-dependency
-Go standard: the database service's standard tier in the base module, the provider's native API
+The SQL infrastructure library of Go Elemental, the Standards Lab organization's Go
+implementation of the Elemental Architecture: the database service's standard tier in the base module, the provider's native API
 reached through the handle it exposes, and the driver isolated in the `postgres` sub-module.
 Managed with the marathon workflow; start from `context/README.md`.
 
@@ -21,7 +21,7 @@ zone page in the same effort.
 - **Local development** uses the committed root `go.work`; pinned `require` versions are the
   committed steady state, and a `replace` directive is only a transient bridge while a provider
   builds against unreleased base changes.
-- **Dependencies, releases, CI, tests, tasks** — per the Go Minimal standard principles in the
+- **Dependencies, releases, CI, tests, tasks** — per the Go Elemental standard principles in the
   landing zone (base `v*` and `postgres/v*` tags, per-module CI matrix, hermetic driver-stub
   tests, mise tasks looping over the modules).
 - **Public repo.** Modules resolve through the public Go proxy; CI carries no private-module

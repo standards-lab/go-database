@@ -1,6 +1,6 @@
 # go-database
 
-SQL infrastructure library for Standards Lab's Go Minimal standard: the data layer's standard
+SQL infrastructure library for Standards Lab's Go Elemental standard: the data layer's standard
 tier, reference-data seeding, and the Postgres provider.
 
 `github.com/standards-lab/go-database` is the base module, holding the `database` package at its
@@ -10,9 +10,9 @@ that pins the driver and is released on its own tags.
 ## Standard
 
 `go-database` is an infrastructure library of
-[Go Minimal](https://github.com/standards-lab/docs/blob/main/standards/go-minimal/index.md), the
+[Go Elemental](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/index.md), the
 minimal-dependency Go standard, and its design is documented on the standard's
-[go-database page](https://github.com/standards-lab/docs/blob/main/standards/go-minimal/go-database/index.md).
+[go-database page](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/go-database/index.md).
 Its repository-level principles:
 
 - The base module depends on the standard library and `go-core`; the driver enters a consumer's
