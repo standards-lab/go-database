@@ -5,6 +5,15 @@ and superseding the query-vocabulary note. The built packages are authoritative 
 they express; this note holds the settled intent the code cannot show — the boundaries, the
 rationale, and the seams the next slices build on.
 
+> Superseded (2026-08-31): the DSL strategy (`standards-lab
+> context/design/dsl-driven-services.md`, executed by `v1.data.sql`) retires the statement
+> vocabulary — `ast`, `operation`, and `exec` are replaced in v0.4 by authored SQL files and
+> the thin `query`/`migrate` mechanisms. The permanence claim below is withdrawn; the parts
+> that survive (the dialect capability pattern and divergence ledger, the portability promise
+> in its by-discipline form, baseline-standard ownership, validation-first, the guard
+> contract, the typed directive errors) are restated when the executing session rewrites this
+> note. The text below describes v0.3.0 as built.
+
 ## Four layers, one direction
 
 `database` (service) → `ast` (statements as values) → `operation` (contracts) → `exec`
