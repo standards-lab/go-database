@@ -1,20 +1,20 @@
 # go-database
 
-The SQL infrastructure library of Go Minimal, the Standards Lab organization's minimal-dependency
-Go standard: the database service in four layers, with the driver isolated in the `postgres`
+The SQL infrastructure library of Go Elemental, the Standards Lab organization's Go
+implementation of the Elemental Architecture: the database service in four layers, with the driver isolated in the `postgres`
 provider sub-module.
 
 The design and conventions of this repository are documented in the organization's
 [documentation landing zone](https://github.com/standards-lab/docs); this context records only
 working knowledge the landing zone and the code do not express. The repository page is
-[go-database](https://github.com/standards-lab/docs/blob/main/standards/go-minimal/go-database/index.md),
-under the [Go Minimal](https://github.com/standards-lab/docs/blob/main/standards/go-minimal/index.md)
+[go-database](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/go-database/index.md),
+under the [Go Elemental](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/index.md)
 standard, with the design detailed in
-[Service tiers in SQL](https://github.com/standards-lab/docs/blob/main/standards/go-minimal/go-database/tiers.md),
-[The layer ontology](https://github.com/standards-lab/docs/blob/main/standards/go-minimal/go-database/layers.md),
-[The dialect interface](https://github.com/standards-lab/docs/blob/main/standards/go-minimal/go-database/dialect.md),
+[Service tiers in SQL](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/go-database/tiers.md),
+[The layer ontology](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/go-database/layers.md),
+[The dialect interface](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/go-database/dialect.md),
 and
-[Providers](https://github.com/standards-lab/docs/blob/main/standards/go-minimal/go-database/providers.md).
+[Providers](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/go-database/providers.md).
 
 ## Capability map
 
