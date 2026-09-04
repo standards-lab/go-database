@@ -8,33 +8,28 @@ import (
 	"time"
 )
 
-// DB wraps a provider-constructed connection pool with lifecycle integration
-// and the provider's dialect. It owns one pool for the process: construction
-// performs no I/O, Start establishes connectivity, and Ready reports it live.
-// Start and Shutdown carry the lifecycle hook signature, so the composition
-// root registers the bare method values, and Ready satisfies
-// lifecycle.ReadinessChecker structurally; the package registers no hooks of
-// its own.
+// DB wraps a provider-constructed connection pool with lifecycle integration.
+// It owns one pool for the process: construction performs no I/O, Start
+// establishes connectivity, and Ready reports it live. Start and Shutdown
+// carry the lifecycle hook signature, so the composition root registers the
+// bare method values, and Ready satisfies lifecycle.ReadinessChecker
+// structurally; the package registers no hooks of its own.
 type DB struct {
 	conn        *sql.DB
-	dialect     Dialect
 	connTimeout time.Duration
 	started     atomic.Bool
 }
 
-// New wraps a provider-constructed pool with dialect and applies cfg's pool
-// settings — the dialect-independent half of construction every provider
-// shares. It panics if cfg was not finalized, or on a nil conn or dialect:
-// each is a wiring defect at the composition root, not a runtime condition.
-func New(conn *sql.DB, dialect Dialect, cfg Config) *DB {
+// New wraps a provider-constructed pool and applies cfg's pool settings, the
+// half of construction every provider shares. It panics if cfg was not
+// finalized or on a nil conn: each is a wiring defect at the composition
+// root, not a runtime condition.
+func New(conn *sql.DB, cfg Config) *DB {
 	if !cfg.finalized() {
 		panic("database: Config not finalized: call Finalize before New")
 	}
 	if conn == nil {
 		panic("database: nil conn")
-	}
-	if dialect == nil {
-		panic("database: nil dialect")
 	}
 	conn.SetMaxOpenConns(*cfg.MaxOpenConns)
 	conn.SetMaxIdleConns(*cfg.MaxIdleConns)
@@ -43,19 +38,15 @@ func New(conn *sql.DB, dialect Dialect, cfg Config) *DB {
 
 	return &DB{
 		conn:        conn,
-		dialect:     dialect,
 		connTimeout: cfg.ConnTimeout.Duration(),
 	}
 }
 
-// Conn returns the underlying connection pool.
+// Conn returns the underlying connection pool. The SQL layer wraps it
+// (sqlate.Wrap with the engine's dialect) and the admin service reads its
+// statistics; nothing in this package runs statements on it.
 func (d *DB) Conn() *sql.DB {
 	return d.conn
-}
-
-// Dialect returns the dialect the provider constructed this database with.
-func (d *DB) Dialect() Dialect {
-	return d.dialect
 }
 
 // Start establishes connectivity with a ping bounded by the configured

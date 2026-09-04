@@ -1,18 +1,27 @@
-// Package database provides the SQL data layer's dialect-neutral core: a
-// lifecycle-integrated wrapper over a database/sql connection pool and the
-// dialect seam its providers implement. The package depends on the standard
-// library and go-core's config package alone; every driver lives in a
-// provider sub-module (postgres) that constructs the pool and supplies the
-// dialect, so a consumer imports its provider once, at the composition root.
+// Package database is the SQL infrastructure service: a lifecycle-integrated
+// wrapper over a database/sql connection pool and the configuration block
+// that sizes it. The package depends on the standard library and go-core's
+// config package alone; every driver lives in a provider sub-module
+// (postgres) that constructs the pool, so a consumer imports its provider
+// once, at the composition root. Statements, sessions, transactions, and
+// the dialect are the sqlate library's: the composition root wraps
+// [DB.Conn] with sqlate.Wrap and the engine's dialect, and the admin package
+// administers the schema over both.
 //
 // # Wrapper
 //
-// [New] wraps the provider-constructed *sql.DB with the provider's [Dialect]
-// and a finalized [Config], applying the config's pool settings — the
-// dialect-independent half of construction every provider shares. It performs
-// no I/O: an unfinalized Config, nil conn, or nil dialect panics with the fix
-// named, and everything else waits for Start. [DB.Conn] exposes the pool;
-// [DB.Dialect] the seam.
+// [New] wraps the provider-constructed *sql.DB with a finalized [Config],
+// applying the config's pool settings, the half of construction every
+// provider shares. It performs no I/O: an unfinalized Config or a nil conn
+// panics with the fix named, and everything else waits for Start.
+// [DB.Conn] exposes the pool.
+//
+// The panic follows the package's wiring rule. A defect the composition
+// root wires, such as an unfinalized config or a missing pool, panics,
+// because no runtime condition produces it and no caller can recover from
+// it sensibly. A defect in configuration content, such as a reserved
+// connection option, returns an error from the provider's constructor,
+// because configuration is input.
 //
 // # Lifecycle wiring
 //
@@ -33,30 +42,9 @@
 // [DB.Ready] satisfies lifecycle.ReadinessChecker structurally and reports
 // live connectivity: false before Start or after Shutdown, and otherwise a
 // ping bounded by conn_timeout. A readiness probe aggregating the database
-// therefore reflects it now — 503 during an outage, healed when the database
-// returns — at the cost of one bounded round trip per probe. [DB.Ping] is the
-// same verification under the caller's context and bound.
-//
-// # Sessions and transactions
-//
-// [Session] is the querying surface the exec package's read runners take,
-// implemented by both [DB] and [Tx], so the same reads run against the pool
-// or inside a transaction and the dialect travels with the session. The
-// consumer owns the transaction boundary: [DB.Begin] opens a [Tx], write
-// runners take *Tx concretely so the compiler enforces the boundary, and
-// [ExecTx] wraps one unit of work — commit on success, rollback on the
-// unit's error. [Tx.Commit] routes its error through the dialect's
-// MapError, the one place a violation deferred to COMMIT can be classified.
-//
-// # Dialect
-//
-// [Dialect] is the interface a provider implements for the base: a name, the
-// bind placeholder renderer, and the driver error mapper. The ast package's
-// rendering and the providers' error classification both route through it,
-// which is what keeps the layers above dialect-neutral. Providers are
-// selected by typed construction — a [Provider] constant and a constructor
-// per provider, no registry — and opt into the ast package's render
-// capabilities per feature.
+// therefore reflects it now, 503 during an outage and healed when the
+// database returns, at the cost of one bounded round trip per probe.
+// [DB.Ping] is the same verification under the caller's context and bound.
 //
 // # Configuration
 //
@@ -66,21 +54,16 @@
 // pointers: nil is unset and takes the default, while an explicit zero
 // survives the load and means what it says. Port defaults in the provider,
 // User and Password stay optional (requiredness varies by provider and auth
-// mode), and Options passes dialect-specific connection keys through to the
+// mode), and Options passes engine-specific connection keys through to the
 // provider. Finalize composes the standard override names from the prefix it
 // receives (via [NewEnv], recorded on [Env] for introspection); an empty
 // prefix disables the overrides.
 //
 // # Errors
 //
-// The package owns the error taxonomy consumers match on. [ErrNotReady] and
-// [ErrConnectionFailed] classify service conditions, wrapped in the dual
-// form fmt.Errorf("%w: %w", sentinel, err) so errors.Is classifies while
-// the driver's error stays recoverable. The four constraint classes —
-// [ErrUniqueViolation], [ErrForeignKeyViolation], [ErrCheckViolation],
-// [ErrNotNullViolation] — reach the caller inside a [ConstraintError] from
-// a provider's MapError, carrying the constraint name when the driver
-// exposes it; [ErrVersionMismatch] classifies a failed optimistic-
-// concurrency guard. sql.ErrNoRows is never mapped; it flows to the
-// boundary unchanged.
+// [ErrNotReady] and [ErrConnectionFailed] classify the service conditions,
+// wrapped in the dual form fmt.Errorf("%w: %w", sentinel, err) so errors.Is
+// classifies while the driver's error stays recoverable. Errors a statement
+// raises, the constraint classes among them, are classified by the sqlate
+// dialect inside the session and are sqlate's sentinels.
 package database
