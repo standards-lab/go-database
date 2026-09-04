@@ -10,7 +10,7 @@ supplies the evidence, and what proves out is promoted at its close. The session
 
 > Outcome (2026-09-03): the experiment closed. Its verdict is
 > `standards-lab/experiments/sql-dsl/REVIEW.md`, its record `NOTES.md` beside it, and the
-> library it settled is `sqlate` (`standards-lab/context/concepts/sqlate.md`), a standalone
+> library it settled is `sqlate` (`github.com/standards-lab/sqlate`, released at v0.1.0), a standalone
 > module below this one rather than `query` and `migrate` inside it; this module's v0.4.0 is
 > the infrastructure service plus an `admin` package over sqlate
 > (`v1.data.sql.integration.database`). Where a decision or question below came out
