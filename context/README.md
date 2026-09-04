@@ -21,11 +21,11 @@ and
 The built packages are authoritative through their code and `doc.go`; the landing zone documents
 the design. Detail for what is unbuilt is added when it is about to be built.
 
-- **database** — the service layer: the wrapper, the `Dialect` interface, the `Session`/`Tx`
-  seam with `ExecTx`, the configuration block, and the error taxonomy (connectivity,
-  constraint classes, version mismatch). Built. In v0.4 (planned) the seam maps every error,
-  `Session` becomes the stdlib method set with `PrepareContext`, and `Transact[T]` with
-  options is the one transaction runner.
+- **database** — the service layer: the wrapper over the pool, the `Dialect` interface, the
+  `Session` and `Tx` types with `ExecTx`, the configuration block, and the error types
+  (connectivity, the constraint classes, version mismatch). Built. In v0.4 (planned) the
+  package keeps `Config`, the pool, lifecycle, and readiness; `Session`, `Tx`, `Dialect`, and
+  the error types move to `sqlate`, which maps every error inside the session.
 - **ast** — the statement layer: standard SQL as values — expressions, predicates, tables,
   `Select`/`Compound` as the sealed `Query` expressions, `Insert`/`Update`/`Delete` as the
   write statements — rendered to `SQL` values through the dialect, with the two-direction
@@ -43,18 +43,16 @@ the design. Detail for what is unbuilt is added when it is about to be built.
   transaction per step, the decode format selected by extension. Built; retires in v0.4 to a
   documented consumer pattern over the transaction runner.
 - **postgres** — the PostgreSQL provider: the pool over pgx's `database/sql` adapter and the
-  postgres dialect — `$N` placeholders, class-23 constraint classification, the `RETURNING`
-  capability. Built; v0.4 drops the `ast` capabilities and adds the migrate lock.
-- **query** — planned: the mechanism over authored SQL files — statements with named
-  parameters, the `Source` inventory, typed handles bound once at wiring, the projection with
-  its declared field contract and directives, the guard, prepare-based verification, and the
-  protocol-only pattern templates. See `concepts/sql-architecture.md`.
-- **migrate** — planned: schema versioning over embedded SQL — the history table, per-file
-  transactions with a header opt-out, dirty and force semantics, the lock capability. See
-  `concepts/sql-architecture.md`.
-- **internal/drivertest** — planned: the one shared scripted driver with prepare support,
-  replacing the fakes duplicated across four packages.
+  postgres dialect (`$N` placeholders, class-23 constraint classification, the `RETURNING`
+  capability). Built. In v0.4 it keeps the driver, the DSN, and pool construction and
+  supplies no dialect; the dialect is `sqlate/postgres`.
+- **admin** — planned for v0.4: the database admin service over `sqlate`, generic over a
+  migrator, a seeder, a catalog, and the pool. It verifies, migrates, and seeds at startup and
+  on demand; every operation is a trigger over a library function.
 
-`design/layers.md` describes v0.3.0 as built and is superseded by the DSL strategy. The v0.4
-direction is `concepts/sql-architecture.md`, settled by evidence from the
-`v1.data.sql.prototype` experiment and rewritten into design by the sessions that extract it.
+The mechanism over authored SQL files (`query`, `migrate`, the scripted driver for unit tests,
+and the lint) is `sqlate`, a standalone library below this one, settled by the
+`v1.data.sql.prototype` experiment (`standards-lab/context/concepts/sqlate.md`).
+`design/layers.md` describes v0.3.0 as built and is superseded; `concepts/sql-architecture.md`
+is the plan the experiment started from, with dated notes where the outcome differed. The
+`v1.data.sql.integration.database` task rewrites both.
