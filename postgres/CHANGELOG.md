@@ -7,6 +7,18 @@ changelog covers this sub-module only; the base module keeps its own.
 
 ## [Unreleased]
 
+## [v0.3.0] - 2026-09-04
+
+### Changed
+
+- **Breaking:** the provider supplies no dialect. The `dialect` type, its `MapError`
+  classification into the base module's constraint classes, and its `ast.ReturningRenderer`
+  capability are removed; the `sqlate/postgres` package owns the PostgreSQL dialect, and a
+  composition root wraps the pool it constructs with `sqlate.Wrap`. `New` keeps its signature
+  and calls the base module's `New(conn, cfg)`.
+- **Breaking:** the `Provider` constant is removed with the base module's `Provider` type.
+- Requires `github.com/standards-lab/go-database` v0.4.0.
+
 ## [v0.2.0] - 2026-08-28
 
 ### Added
@@ -46,7 +58,8 @@ The first release of the PostgreSQL provider, against `github.com/standards-lab/
   classifying constraint violations arrives with the write path. `postgres.Provider` types the
   selection constant.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/v0.2.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/v0.3.0...HEAD
+[v0.3.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.2.0...postgres/v0.3.0
 [v0.2.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.1.1...postgres/v0.2.0
 [v0.1.1]: https://github.com/standards-lab/go-database/compare/postgres/v0.1.0...postgres/v0.1.1
 [v0.1.0]: https://github.com/standards-lab/go-database/releases/tag/postgres/v0.1.0

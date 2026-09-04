@@ -7,6 +7,43 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.4.0] - 2026-09-04
+
+The module is reduced to the SQL infrastructure service over the `sqlate` library
+(`github.com/standards-lab/sqlate`), which owns everything from the `.sql` file to the scanned
+row. A composition root wraps the pool this module constructs with `sqlate.Wrap` and the engine's
+dialect from `sqlate/postgres`, compiles its statements through `sqlate/query`, and migrates
+through `sqlate/migrate`.
+
+### Changed
+
+- **Breaking:** the `ast`, `operation`, `exec`, and `seed` packages are removed. Authored SQL
+  files over `sqlate/query` replace the statement vocabulary and the runners; `sqlate/migrate`
+  and a consumer's own seed statements replace `seed`.
+- **Breaking:** the `Session`, `Tx`, and `Dialect` types, `ExecTx`, and the `Provider` constant
+  are removed, with the `DB.Dialect`, `DB.Begin`, `DB.QueryContext`, `DB.QueryRowContext`, and
+  `DB.ExecContext` methods. The `sqlate` package owns the session and the dialect.
+- **Breaking:** the four constraint-class sentinels, `ConstraintError`, and `ErrVersionMismatch`
+  are removed. The `sqlate` package owns the constraint classes and `sqlate/query` the version
+  mismatch; the `sqlate/postgres` dialect classifies driver errors inside the session.
+- **Breaking:** `New` is `New(conn *sql.DB, cfg Config) *DB`. It panics on an unfinalized
+  config or a nil pool, the wiring rule the package comment now states.
+- The `build` task and the CI build step run each module with `GOWORK=off`, so a pin that no
+  longer builds fails rather than being masked by the committed `go.work`.
+
+### Added
+
+- `admin`: the database admin service. `New` takes the pool's lifecycle object, the `sqlate`
+  session, a prebuilt `migrate.Migrator`, and the pattern catalog; `Options` carries a
+  `Seeder`, a `Registry` of compiled statements, a logger, and the seed switch. `Register`
+  declares the service at lifecycle `Stage` 1; `Start` verifies the history, applies a pending
+  set, verifies the seeder, and seeds when enabled. `Verify`, `Status`, `Up`, `Down`, `Steps`,
+  `Force`, and `Seed` are triggers over the library's functions; `Catalog` and `Statements`
+  read build-time state; `Diagnose` pings, reads the server's version through the dialect's
+  optional `Versioner` capability, and reports the pool's counters.
+- The base module requires `github.com/standards-lab/sqlate` v0.1.0, a standard-library-only
+  module.
+
 ## [v0.3.0] - 2026-08-28
 
 ### Changed
@@ -112,7 +149,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.4.0...HEAD
+[v0.4.0]: https://github.com/standards-lab/go-database/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/standards-lab/go-database/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/standards-lab/go-database/compare/v0.1.1...v0.2.0
 [v0.1.1]: https://github.com/standards-lab/go-database/compare/v0.1.0...v0.1.1

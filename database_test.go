@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -56,16 +55,6 @@ func (s stubConn) Ping(context.Context) error {
 	return nil
 }
 
-// stubDialect is deliberately not postgres-shaped, so the wrapper is
-// exercised against a second placeholder style.
-type stubDialect struct{}
-
-func (stubDialect) Name() string { return "stub" }
-
-func (stubDialect) Placeholder(n int) string { return "@p" + strconv.Itoa(n) }
-
-func (stubDialect) MapError(err error) error { return err }
-
 func finalizedConfig(t *testing.T) database.Config {
 	t.Helper()
 	cfg := database.Config{Name: "app"}
@@ -77,7 +66,7 @@ func finalizedConfig(t *testing.T) database.Config {
 
 func newTestDB(t *testing.T, connector *stubConnector) *database.DB {
 	t.Helper()
-	db := database.New(sql.OpenDB(connector), stubDialect{}, finalizedConfig(t))
+	db := database.New(sql.OpenDB(connector), finalizedConfig(t))
 	t.Cleanup(func() { _ = db.Conn().Close() })
 	return db
 }
@@ -102,22 +91,13 @@ func TestNew_PanicsOnUnfinalizedConfig(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	wantPanic(t, "Config not finalized", func() {
-		database.New(conn, stubDialect{}, database.Config{Name: "app"})
+		database.New(conn, database.Config{Name: "app"})
 	})
 }
 
 func TestNew_PanicsOnNilConn(t *testing.T) {
 	wantPanic(t, "nil conn", func() {
-		database.New(nil, stubDialect{}, finalizedConfig(t))
-	})
-}
-
-func TestNew_PanicsOnNilDialect(t *testing.T) {
-	conn := sql.OpenDB(&stubConnector{})
-	t.Cleanup(func() { _ = conn.Close() })
-
-	wantPanic(t, "nil dialect", func() {
-		database.New(conn, nil, finalizedConfig(t))
+		database.New(nil, finalizedConfig(t))
 	})
 }
 
@@ -127,7 +107,7 @@ func TestNew_AppliesPoolSettings(t *testing.T) {
 		t.Fatalf("finalize config: %v", err)
 	}
 
-	db := database.New(sql.OpenDB(&stubConnector{}), stubDialect{}, cfg)
+	db := database.New(sql.OpenDB(&stubConnector{}), cfg)
 	t.Cleanup(func() { _ = db.Conn().Close() })
 
 	if got := db.Conn().Stats().MaxOpenConnections; got != 42 {
@@ -140,9 +120,6 @@ func TestDB_Accessors(t *testing.T) {
 
 	if db.Conn() == nil {
 		t.Error("Conn() = nil")
-	}
-	if got := db.Dialect().Placeholder(3); got != "@p3" {
-		t.Errorf("Dialect().Placeholder(3) = %s, want @p3", got)
 	}
 }
 

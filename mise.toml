@@ -8,13 +8,16 @@ golangci-lint = "2.13.2"
 [env]
 GO_MODULES = ". postgres"
 
+# Each module builds with the workspace off, resolving its pins the way a
+# consumer does, so a pin that no longer builds fails here and in CI rather
+# than being masked by go.work.
 [tasks.build]
-description = "Build all modules"
+description = "Build all modules standalone (GOWORK=off)"
 run = '''
 set -e
 for mod in $GO_MODULES; do
   echo "==> build: $mod"
-  (cd "$mod" && go build ./...)
+  (cd "$mod" && GOWORK=off go build ./...)
 done
 '''
 
