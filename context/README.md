@@ -52,7 +52,7 @@ the design. Detail for what is unbuilt is added when it is about to be built.
 
 The mechanism over authored SQL files (`query`, `migrate`, the scripted driver for unit tests,
 and the lint) is `sqlate`, a standalone library below this one, settled by the
-`v1.data.sql.prototype` experiment (`standards-lab/context/concepts/sqlate.md`).
+`v1.data.sql.prototype` experiment and released at v0.1.0 (`github.com/standards-lab/sqlate`).
 `design/layers.md` describes v0.3.0 as built and is superseded; `concepts/sql-architecture.md`
 is the plan the experiment started from, with dated notes where the outcome differed. The
 `v1.data.sql.integration.database` task rewrites both.
