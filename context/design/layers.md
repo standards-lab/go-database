@@ -13,6 +13,11 @@ rationale, and the seams the next slices build on.
 > in its by-discipline form, baseline-standard ownership, validation-first, the guard
 > contract, the typed directive errors) are restated when the executing session rewrites this
 > note. The text below describes v0.3.0 as built.
+>
+> Outcome (2026-09-03): the `v1.data.sql.prototype` experiment settled the replacement as
+> `sqlate`, a standalone library below this module (`standards-lab/context/concepts/sqlate.md`);
+> v0.4.0 is the infrastructure service plus an `admin` package over it. The
+> `v1.data.sql.integration.database` task rewrites this note.
 
 ## Four layers, one direction
 
