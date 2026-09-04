@@ -8,6 +8,14 @@ settled to the depth a prototype can start from. Recorded by the `v1.data.sql.pl
 supplies the evidence, and what proves out is promoted at its close. The sessions that follow
 (`v1.data.sql.query`, `v1.data.sql.migrate`) extract the proven shape into this module.
 
+> Outcome (2026-09-03): the experiment closed. Its verdict is
+> `standards-lab/experiments/sql-dsl/REVIEW.md`, its record `NOTES.md` beside it, and the
+> library it settled is `sqlate` (`standards-lab/context/concepts/sqlate.md`), a standalone
+> module below this one rather than `query` and `migrate` inside it; this module's v0.4.0 is
+> the infrastructure service plus an `admin` package over sqlate
+> (`v1.data.sql.integration.database`). Where a decision or question below came out
+> differently, a dated note says so; the `v0.4.0` task culls or rewrites this concept.
+
 ## Decisions the plan session took
 
 These are settled inputs to the prototype, not questions it re-opens.
@@ -15,7 +23,10 @@ These are settled inputs to the prototype, not questions it re-opens.
 1. **`database.go` is the domain's sole interface to SQL infrastructure.** It is the domain's
    SQL client, what an auth or storage SDK hands a consumer out of the box: the typed statement
    handles and the operations as its methods. `service.go` calls it and never imports `query`.
-2. **Named parameters, `:name` only.** Resolved to dialect positions once at load. The scanner
+2. **Named parameters, `:name` only.** *Superseded at the prototype's stage 6 review: a
+   parameter is `{{name}}`, or `{{name:type}}` to cast, or `{{name...}}` to expand a list;
+   a surrounding delimiter with no meaning in SQL needs no lexer, and `::uuid` and `:=` are
+   plain text.* As planned: Resolved to dialect positions once at load. The scanner
    tracks single-quoted strings (`''` escape), double-quoted identifiers, line comments, and
    block comments; nothing inside them is a parameter. In normal text a parameter is `:`
    followed by `[A-Za-z_][A-Za-z0-9_]*` where the `:` is preceded by neither `:` nor an
@@ -30,7 +41,9 @@ These are settled inputs to the prototype, not questions it re-opens.
    `All`, and `Each` (an `iter.Seq2[T, error]` that closes on break); `query.Project(base,
    scanFn)` yields `Projection[T]` with `List` and `One`; `query.Guarded(command, check,
    "version")` yields `Guard` with `Run`; `Statement` carries `Exec`. Constructors are package
-   functions because Go has no generic methods, and `T` is inferred from the scan function. A
+   functions because Go has no generic methods, and `T` is inferred from the scan function.
+   *Superseded at stage 14: Go 1.27 has generic methods, and the constructors are
+   `Statement.Scan`, `Statement.Project`, `Statement.Guarded`, and `DB.Transact`.* A
    reflection-populated statement struct was evaluated and rejected: the typed handles need a
    scan function only code supplies, so reflection saves a few lines per domain for a
    `reflect` import and a runtime mismatch.
@@ -317,7 +330,12 @@ Each question names the decision its answer changes; a spike is worth running on
    and build-time generation, where `go generate` composes the same templates and fragments
    into committed complete `.sql` files and the runtime sees plain SQL. The trade is workflow
    simplicity against editor and lint reach over the final text. Decides the pattern catalog's
-   mechanism and the meta-language concept's phase one.
+   mechanism and the meta-language concept's phase one. *Verdict (stage 10, narrowed at the
+   stage 6 review): on-demand stitching over authored patterns, the library's own SQL
+   included; build-time generation set aside, since request-shaped text can only be composed
+   on demand and editor and lint reach are recovered by the lint compiling every statement
+   against the same sources. Patterns are sourced from any `fs.FS` under a namespace and the
+   catalog is built once at the composition root (stage 11).*
 2. **The file grammar.** Whether the `:name` scanner and the header declarations hold up under
    editor tooling and Verify, and whether the field contract stays in the header or moves to
    a Go map beside the scan. Decides the grammar `Load` parses and the harness lints.
@@ -334,10 +352,11 @@ Each question names the decision its answer changes; a spike is worth running on
 
 For the experiment's own settling to start from; it may adjust.
 
-- Home: `experiments/sql-dsl/` in this repository, a nested Go module generated from the
-  template (`gonew github.com/standards-lab/go-web-sdk-template/template@latest
-  github.com/standards-lab/go-database/experiments/sql-dsl`). The root module and the CI matrix
-  ignore it; it is not added to `go.work`.
+- Home: `standards-lab/experiments/sql-dsl/`, at the workspace coordinator, where every
+  experiment lives (moved from this repository at the experiment's start; the marathon
+  finding is `backlog.marathon-workspace-experiments`). A nested Go module generated from
+  the template at `template/v0.5.0`, module path
+  `github.com/standards-lab/org/experiments/sql-dsl`.
 - Dependencies: go-core and go-web-sdk at their releases; this module's v0.3.0 root and
   postgres v0.2.0 only for what stays (`Config`, the `DB` lifecycle, the sentinels, the pgx
   pool). The new seam, `query`, `migrate`, and the pattern layer are built inside the module
