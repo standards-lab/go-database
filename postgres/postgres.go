@@ -12,9 +12,6 @@ import (
 	"github.com/standards-lab/go-database"
 )
 
-// Provider is this sub-module's typed selection constant.
-const Provider database.Provider = "postgres"
-
 const defaultPort = 5432
 
 var reservedOptions = map[string]bool{
@@ -28,9 +25,9 @@ var reservedOptions = map[string]bool{
 }
 
 // New constructs the connection pool from a finalized config and wraps it
-// with the postgres dialect via [database.New]. It performs no I/O; see the
-// package documentation for the composition and its guarantees. An
-// unfinalized config panics with the fix named.
+// via [database.New]. It performs no I/O; see the package documentation for
+// the composition and its guarantees. An unfinalized config panics with the
+// fix named.
 func New(cfg database.Config) (*database.DB, error) {
 	if cfg.ConnTimeout == nil {
 		panic("postgres: Config not finalized: call Finalize before New")
@@ -52,7 +49,7 @@ func New(cfg database.Config) (*database.DB, error) {
 	}
 
 	u := url.URL{
-		Scheme:   string(Provider),
+		Scheme:   "postgres",
 		Host:     net.JoinHostPort(cfg.Host, strconv.Itoa(port)),
 		Path:     "/" + cfg.Name,
 		RawQuery: query.Encode(),
@@ -71,7 +68,5 @@ func New(cfg database.Config) (*database.DB, error) {
 	}
 	connCfg.ConnectTimeout = cfg.ConnTimeout.Duration()
 
-	return database.New(
-		stdlib.OpenDB(*connCfg), dialect{}, cfg,
-	), nil
+	return database.New(stdlib.OpenDB(*connCfg), cfg), nil
 }

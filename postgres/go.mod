@@ -15,3 +15,7 @@ require (
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/text v0.39.0 // indirect
 )
+
+// Transient bridge while the provider builds against the unreleased base
+// module; the v0.4.0 release drops it and bumps the require.
+replace github.com/standards-lab/go-database => ../

@@ -1,7 +1,6 @@
 package postgres_test
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -120,39 +119,4 @@ func TestNew_PanicsOnUnfinalizedConfig(t *testing.T) {
 		}
 	}()
 	_, _ = postgres.New(database.Config{Name: "app"})
-}
-
-func TestProvider(t *testing.T) {
-	if got := string(postgres.Provider); got != "postgres" {
-		t.Errorf("Provider = %q, want postgres", got)
-	}
-}
-
-func TestDialect(t *testing.T) {
-	db, err := postgres.New(finalizedConfig(t))
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Conn().Close() })
-	d := db.Dialect()
-
-	if got := d.Name(); got != "postgres" {
-		t.Errorf("Name() = %q, want postgres", got)
-	}
-	if got := d.Placeholder(1); got != "$1" {
-		t.Errorf("Placeholder(1) = %q, want $1", got)
-	}
-	if got := d.Placeholder(12); got != "$12" {
-		t.Errorf("Placeholder(12) = %q, want $12", got)
-	}
-
-	// An error outside the classified constraint classes passes through
-	// unchanged: nothing is swallowed, and sql.ErrNoRows flows untouched.
-	cause := errors.New("driver failure")
-	if got := d.MapError(cause); got != cause {
-		t.Errorf("MapError(err) = %v, want the error unchanged", got)
-	}
-	if got := d.MapError(nil); got != nil {
-		t.Errorf("MapError(nil) = %v, want nil", got)
-	}
 }

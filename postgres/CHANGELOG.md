@@ -7,6 +7,16 @@ changelog covers this sub-module only; the base module keeps its own.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** the provider supplies no dialect. The `dialect` type, its `MapError`
+  classification into the base module's constraint classes, and its `ast.ReturningRenderer`
+  capability are removed; the `sqlate/postgres` package owns the PostgreSQL dialect, and a
+  composition root wraps the pool it constructs with `sqlate.Wrap`. `New` keeps its signature
+  and calls the base module's `New(conn, cfg)`.
+- **Breaking:** the `Provider` constant is removed with the base module's `Provider` type.
+- Requires `github.com/standards-lab/go-database` v0.4.0.
+
 ## [v0.2.0] - 2026-08-28
 
 ### Added
