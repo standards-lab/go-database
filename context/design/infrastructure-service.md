@@ -18,7 +18,9 @@ three. The landing zone's go-database pages restate it once the docs pass rewrit
   never its engine sub-module; the composition root imports `sqlate/postgres`.
 - **The application** owns the content the admin service administers (the migration set, the
   seeder, the statements registry) and the HTTP half of the admin surface (the route group, the
-  handler, the mount). The template scaffolds that half; a management listener is the
+  handler, the mount). The reference service builds that half at
+  `v1.data.sql.integration.service`, documented as a pattern rather than scaffolded by the
+  template, which stays engine-free; a management listener is the
   `v1.data.sql.integration.listener` task.
 
 The dialect capabilities follow the same line. The `admin` package declares the `Versioner`
