@@ -33,5 +33,6 @@ is added when it is about to be built.
 
 Statements, sessions, transactions, the dialect, migrations, and the scripted test driver are
 `sqlate`'s (`github.com/standards-lab/sqlate`, v0.1.0), a standalone library below this one. The
-HTTP half of the admin service, the route group and handler, is application code the reference
-service builds (`v1.data.sql.integration.service`); the template stays engine-free.
+HTTP half of the admin service, the route group and handler, is application code; the reference
+service built it at `v1.data.sql.integration.service` (2026-09-06), and the template stays
+engine-free.
