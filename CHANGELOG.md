@@ -7,6 +7,26 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `admin.Seeder` is a mechanism over named sets: `States() []string` lists the
+  names it declares and `Seed(ctx, state)` applies one. A set is the data a deployment or a
+  scenario starts from, declared by the consumer, applied idempotently.
+- **Breaking:** `admin.Options.Seed` is a state name, the set that applies at every startup once
+  the schema is current; empty applies none. A name without a `Seeder` panics; a name the seeder
+  does not declare fails startup with `ErrUnknownState`.
+- **Breaking:** `admin.Service.Seed` takes a state name; empty applies the configured set.
+  `ErrSeedDisabled` now means no seeder, or no set named or configured.
+
+### Added
+
+- `admin.Service.Reset`: the transition to a named state. It reverts every applied migration,
+  applies the whole set, and seeds the state's set, each through the function the verbs run,
+  and returns a `Transition` with the state, the refreshed `Status`, and the rows seeded. It
+  is destructive, in the class of `Down` and `Force`.
+- `admin.Service.States` lists the seeder's declared names; `admin.ErrUnknownState` classifies
+  an undeclared name, refused before any I/O.
+
 ## [v0.4.0] - 2026-09-04
 
 The module is reduced to the SQL infrastructure service over the `sqlate` library

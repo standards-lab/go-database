@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -20,21 +21,29 @@ import (
 const Stage = 1
 
 var (
-	// ErrSeedDisabled reports a seed request in an environment whose
-	// options do not enable seeding.
+	// ErrSeedDisabled reports a seed request the service cannot serve: no
+	// seeder is wired, or the request names no set and the options
+	// configure none.
 	ErrSeedDisabled = errors.New("seeding is disabled")
 
 	// ErrValidation classifies a rejected administrative request: a verb
 	// argument outside its domain, refused before any I/O.
 	ErrValidation = errors.New("validation failed")
+
+	// ErrUnknownState reports a state name the seeder does not declare,
+	// refused before any I/O.
+	ErrUnknownState = errors.New("unknown state")
 )
 
-// Seeder is the consumer's seed mechanism: Verify prepares its statements
-// against the schema, and Seed loads the reference data idempotently and
-// counts what it inserted.
+// Seeder is the consumer's seed mechanism over its named sets. A set is
+// the data a deployment or a scenario starts from, declared by the
+// consumer under a state name. Verify prepares the seeder's statements
+// against the schema; States lists the declared names, sorted, without
+// I/O; Seed applies one set idempotently and counts what it inserted.
 type Seeder interface {
 	Verify(ctx context.Context) error
-	Seed(ctx context.Context) (Seeded, error)
+	States() []string
+	Seed(ctx context.Context, state string) (Seeded, error)
 }
 
 // Entry is one domain's compiled statements, registered under its name.
@@ -59,14 +68,16 @@ type Versioner interface {
 // Options holds the collaborators and switches the composition root
 // chooses.
 type Options struct {
-	// Seed enables seeding: at every startup, and on demand. Seeds are
-	// development and test tooling; production leaves it off and carries
-	// reference data as migrations. Seed without a Seeder is a wiring
-	// defect.
-	Seed bool
+	// Seed names the state whose set applies at every startup, once the
+	// schema is current, and on a seed request that names no set: the way
+	// a deployment initializes its data. Empty applies none at startup. A
+	// name without a Seeder is a wiring defect; a name the seeder does not
+	// declare is a configuration defect that fails startup.
+	Seed string
 
 	// Seeder is the consumer's seed mechanism. nil means the consumer has
-	// none: Start verifies no seed statements, and Seed refuses.
+	// no sets: Start verifies no seed statements, and Seed and Reset
+	// refuse.
 	Seeder Seeder
 
 	// Registry is the consumer's statements registry. nil means Statements
@@ -89,15 +100,16 @@ type Service struct {
 	seeder   Seeder
 	registry Registry
 	logger   *slog.Logger
-	seed     bool
+	seed     string
 	ready    atomic.Bool
 }
 
 // New builds the service over pool, the lifecycle object it administers;
 // db, the sqlate session over the same pool; m, the migrator the consumer
 // built over its migration set; and c, the catalog every statement
-// compiles against. A nil pool, db, m, or c panics, as does opts.Seed
-// without opts.Seeder: each is a wiring defect at the composition root.
+// compiles against. A nil pool, db, m, or c panics, as does an opts.Seed
+// name without opts.Seeder: each is a wiring defect at the composition
+// root.
 func New(pool *database.DB, db *sqlate.DB, m *migrate.Migrator, c *query.Catalog, opts Options) *Service {
 	switch {
 	case pool == nil:
@@ -108,8 +120,8 @@ func New(pool *database.DB, db *sqlate.DB, m *migrate.Migrator, c *query.Catalog
 		panic("admin: nil migrator")
 	case c == nil:
 		panic("admin: nil catalog")
-	case opts.Seed && opts.Seeder == nil:
-		panic("admin: Seed enabled without a Seeder")
+	case opts.Seed != "" && opts.Seeder == nil:
+		panic("admin: Seed set without a Seeder")
 	}
 	logger := opts.Logger
 	if logger == nil {
@@ -142,7 +154,7 @@ func (s *Service) Ready() bool { return s.ready.Load() }
 // carry, fails startup; an operator resolves it through the verbs (force,
 // then up) on a process started against a corrected database, or from
 // another replica. The seeder's statements are then verified against the
-// schema, and with seeding enabled the seed runs.
+// schema, and the configured set, when there is one, is applied.
 func (s *Service) Start(ctx context.Context) error {
 	err := s.migrator.Verify(ctx)
 	if pending, ok := errors.AsType[*migrate.PendingError](err); ok {
@@ -167,23 +179,86 @@ func (s *Service) Start(ctx context.Context) error {
 			return err
 		}
 	}
-	if s.seed {
-		n, err := s.Seed(ctx)
+	if s.seed != "" {
+		n, err := s.Seed(ctx, "")
 		if err != nil {
 			return fmt.Errorf("seed: %w", err)
 		}
-		s.logger.InfoContext(ctx, "seeded", "rows", n)
+		s.logger.InfoContext(ctx, "seeded", "state", s.seed, "rows", n)
 	}
 	return nil
 }
 
-// Seed runs the seeder when this environment enables it; off, or without
-// a seeder, the request is refused with [ErrSeedDisabled] before any I/O.
-func (s *Service) Seed(ctx context.Context) (Seeded, error) {
-	if !s.seed || s.seeder == nil {
-		return nil, ErrSeedDisabled
+// States lists the state names the seeder declares, sorted; no seeder
+// declares none. No I/O.
+func (s *Service) States() []string {
+	if s.seeder == nil {
+		return []string{}
 	}
-	return s.seeder.Seed(ctx)
+	if states := s.seeder.States(); states != nil {
+		return states
+	}
+	return []string{}
+}
+
+// Seed applies the named set idempotently over the schema as it stands,
+// or the configured set when state is empty. Without a seeder, or with no
+// set named or configured, the request is refused with [ErrSeedDisabled];
+// a name the seeder does not declare is refused with [ErrUnknownState];
+// both before any I/O.
+func (s *Service) Seed(ctx context.Context, state string) (Seeded, error) {
+	if state == "" {
+		state = s.seed
+	}
+	if err := s.checkState(state); err != nil {
+		return nil, err
+	}
+	return s.seeder.Seed(ctx, state)
+}
+
+// Reset brings the database to the named state: every applied migration
+// is reverted, the whole set is applied, and the state's set is seeded,
+// each through the same function the verbs and Start run. The revert and
+// the apply each hold the migrator's lock; the seed runs outside it, as
+// Seed does. The request is refused before any I/O the way Seed refuses;
+// a failure at any step leaves the schema where that step stopped, and
+// the status is still read so Ready reflects it.
+func (s *Service) Reset(ctx context.Context, state string) (Transition, error) {
+	if err := s.checkState(state); err != nil {
+		return Transition{}, err
+	}
+	if err := s.migrator.Down(ctx, len(s.migrator.Migrations())); err != nil {
+		_, _ = s.Status(ctx)
+		return Transition{}, fmt.Errorf("revert: %w", err)
+	}
+	if err := s.migrator.Up(ctx); err != nil {
+		_, _ = s.Status(ctx)
+		return Transition{}, fmt.Errorf("apply: %w", err)
+	}
+	n, err := s.seeder.Seed(ctx, state)
+	if err != nil {
+		_, _ = s.Status(ctx)
+		return Transition{}, fmt.Errorf("seed: %w", err)
+	}
+	st, err := s.Status(ctx)
+	if err != nil {
+		return Transition{}, err
+	}
+	s.logger.InfoContext(ctx, "reset", "state", state, "rows", n)
+	return Transition{State: state, Schema: st, Seeded: n}, nil
+}
+
+// checkState is the refusal every seed operation applies before I/O: no
+// seeder or no name is [ErrSeedDisabled], an undeclared name is
+// [ErrUnknownState].
+func (s *Service) checkState(state string) error {
+	if s.seeder == nil || state == "" {
+		return ErrSeedDisabled
+	}
+	if !slices.Contains(s.seeder.States(), state) {
+		return fmt.Errorf("%w: %q", ErrUnknownState, state)
+	}
+	return nil
 }
 
 // Verify checks that the history is the set's clean head and, when it is,

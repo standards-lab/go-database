@@ -5,6 +5,15 @@ import "time"
 // Seeded counts the rows a seed run inserted, by the consumer's own names.
 type Seeded map[string]int
 
+// Transition is the result of a reset to a named state: the state, the
+// schema's status after the set was applied, and the rows the state's set
+// inserted.
+type Transition struct {
+	State  string `json:"state"`
+	Schema Status `json:"schema"`
+	Seeded Seeded `json:"seeded"`
+}
+
 // Diagnostics is one read of the database's health: the dialect, the ping
 // latency, the server's version when the dialect supplies the statement,
 // the pool's counters, and the pattern namespaces the catalog registered.
