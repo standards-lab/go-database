@@ -29,8 +29,8 @@ Its repository-level principles:
 
 - `database`: the infrastructure service, a lifecycle-integrated wrapper over a `database/sql`
   pool, the service's configuration block, and the connectivity error sentinels.
-- `admin`: the database admin service, schema verification, migration, seeding, and
-  diagnostics as operations over `sqlate`'s functions, run at startup and on demand.
+- `admin`: the database admin service, schema verification, migration, seeding, named states,
+  and diagnostics as operations over `sqlate`'s functions, run at startup and on demand.
 - `postgres`: the PostgreSQL provider, which constructs the pool over pgx's `database/sql` adapter from
   the configuration block.
 

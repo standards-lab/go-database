@@ -7,6 +7,8 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.5.0] - 2026-09-07
+
 ### Changed
 
 - **Breaking:** `admin.Seeder` is a mechanism over named sets: `States() []string` lists the
@@ -169,7 +171,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/standards-lab/go-database/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/standards-lab/go-database/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/standards-lab/go-database/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/standards-lab/go-database/compare/v0.1.1...v0.2.0
