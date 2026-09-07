@@ -23,10 +23,13 @@ is added when it is about to be built.
   `Ready`, and `Ping`; the configuration block with its environment overrides; and the two
   connectivity sentinels. Built, v0.4.0.
 - **admin**: the database admin service over `sqlate`: `Start` verifies the migration history,
-  applies a pending set, verifies the seeder, and seeds when enabled; the verbs, `Seed`,
-  `Diagnose`, `Catalog`, and `Statements` are triggers over the library's functions. It is
-  generic over a prebuilt migrator, a `Seeder`, a `Registry`, the pattern catalog, and the pool.
-  Built, v0.4.0.
+  applies a pending set, verifies the seeder, and applies the configured seed set; the verbs,
+  `Seed`, `Reset`, `States`, `Diagnose`, `Catalog`, and `Statements` are triggers over the
+  library's functions. A `Seeder` declares named sets, the data a deployment or a scenario
+  starts from; `Reset` is the transition to one, every migration reverted, the set applied,
+  the state's set seeded, in the class of `Down` and `Force`. It is generic over a prebuilt
+  migrator, the `Seeder`, a `Registry`, the pattern catalog, and the pool. Built, v0.5.0
+  (2026-09-07, `v1.data.sql.tasks.states`).
 - **postgres**: the PostgreSQL provider: the pool over pgx's `database/sql` adapter, constructed
   from the configuration block. It supplies no dialect; the dialect is `sqlate/postgres`'s. Built,
   postgres/v0.3.0.
