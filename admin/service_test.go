@@ -80,6 +80,27 @@ func applying() []sqltest.Response {
 	return append(rs, unlocked)
 }
 
+// reverting is the script of a Down over the whole applied set: the lock,
+// the history table, the complete history, each migration's statements
+// in reverse, and the unlock.
+func reverting() []sqltest.Response {
+	rs := []sqltest.Response{locked, created, applied()}
+	for i := len(set) - 1; i >= 0; i-- {
+		if set[i].Transactional {
+			rs = append(rs, sqltest.Response{}, sqltest.Response{}) // down, delete
+		} else {
+			rs = append(rs, sqltest.Response{}, sqltest.Response{}, sqltest.Response{}) // dirty, down, delete
+		}
+	}
+	return append(rs, unlocked)
+}
+
+// current is the script of a Status over a complete, clean history:
+// Version, then Verify.
+func current() []sqltest.Response {
+	return []sqltest.Response{exists(true), head(2, false), exists(true), applied()}
+}
+
 // testDialect is the stub dialect with the two capabilities an engine
 // sub-module supplies: the lock the migrator takes, and the server-version
 // statement Diagnose reads.
@@ -103,17 +124,26 @@ func (testDialect) Unlock(ctx context.Context, conn *sql.Conn, name string) erro
 
 func (testDialect) ServerVersion() string { return "SELECT version()" }
 
-// fakeSeeder counts its calls and answers with a fixed count.
+// fakeSeeder declares its states (default alone when none are set),
+// records the names it was asked to seed, and answers with a fixed count.
 type fakeSeeder struct {
 	verifyErr error
+	states    []string
 	verified  int
-	seeded    int
+	seeded    []string
 }
 
 func (f *fakeSeeder) Verify(context.Context) error { f.verified++; return f.verifyErr }
 
-func (f *fakeSeeder) Seed(context.Context) (admin.Seeded, error) {
-	f.seeded++
+func (f *fakeSeeder) States() []string {
+	if f.states == nil {
+		return []string{"default"}
+	}
+	return f.states
+}
+
+func (f *fakeSeeder) Seed(_ context.Context, state string) (admin.Seeded, error) {
+	f.seeded = append(f.seeded, state)
 	return admin.Seeded{"things": 2}, nil
 }
 
@@ -146,7 +176,7 @@ type fixture struct {
 
 // newFixture builds the service over the fake pool with dialect d, the
 // migration set, the library's own patterns, a one-statement registry, and
-// opts, whose Seeder is replaced by the fixture's fake when it is set.
+// opts, whose Seeder, when set, is the fake the fixture exposes.
 func newFixture(t *testing.T, d sqlate.Dialect, opts admin.Options, responses ...sqltest.Response) fixture {
 	t.Helper()
 	pool, rec := sqltest.Open(t, responses...)
@@ -160,8 +190,7 @@ func newFixture(t *testing.T, d sqlate.Dialect, opts admin.Options, responses ..
 	stmts := catalog.MustCompile(files, "sql", d)
 	f := fixture{rec: rec}
 	if opts.Seeder != nil {
-		f.seeder = &fakeSeeder{}
-		opts.Seeder = f.seeder
+		f.seeder = opts.Seeder.(*fakeSeeder)
 	}
 	opts.Registry = fakeRegistry{{Name: "ping", Statements: stmts}}
 	f.service = admin.New(started(t, pool), db, m, catalog, opts)
@@ -200,7 +229,7 @@ func TestNew_PanicsOnWiringDefects(t *testing.T) {
 	wantPanic(t, "nil db", func() { admin.New(base, nil, m, catalog, admin.Options{}) })
 	wantPanic(t, "nil migrator", func() { admin.New(base, db, nil, catalog, admin.Options{}) })
 	wantPanic(t, "nil catalog", func() { admin.New(base, db, m, nil, admin.Options{}) })
-	wantPanic(t, "without a Seeder", func() { admin.New(base, db, m, catalog, admin.Options{Seed: true}) })
+	wantPanic(t, "without a Seeder", func() { admin.New(base, db, m, catalog, admin.Options{Seed: "default"}) })
 }
 
 // Start on a complete, clean history verifies and reports ready without
@@ -219,8 +248,8 @@ func TestStart_CleanHistoryIsReady(t *testing.T) {
 	if execs := f.rec.SQL(sqltest.OpExec); len(execs) != 0 {
 		t.Errorf("Start wrote: %v", execs)
 	}
-	if f.seeder.verified != 1 || f.seeder.seeded != 0 {
-		t.Errorf("seeder verified %d, seeded %d; want 1, 0", f.seeder.verified, f.seeder.seeded)
+	if f.seeder.verified != 1 || len(f.seeder.seeded) != 0 {
+		t.Errorf("seeder verified %d, seeded %v; want 1, none", f.seeder.verified, f.seeder.seeded)
 	}
 }
 
@@ -340,7 +369,7 @@ func TestVerbs_ValidateBeforeIO(t *testing.T) {
 
 // Up applies the set and answers with the refreshed status.
 func TestUp_ReturnsRefreshedStatus(t *testing.T) {
-	responses := append(applying(), exists(true), head(2, false), exists(true), applied())
+	responses := append(applying(), current()...)
 	s, rec := newService(t, responses...)
 	st, err := s.Up(context.Background())
 	if err != nil {
