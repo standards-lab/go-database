@@ -11,7 +11,12 @@ three. The landing zone's go-database pages restate it once the docs pass rewrit
 - **go-database** owns the pool and its administration. The `database` package constructs
   nothing itself: a provider sub-module builds the `*sql.DB` from the configuration block, and
   the package wraps it with lifecycle and readiness. The `admin` package administers the schema
-  over that pool and owns only operations and policy, never content.
+  over that pool and owns only operations and policy, never content. A seed set, since v0.5.0,
+  is the data a deployment or a scenario starts from, declared by the consumer under a state
+  name and applied idempotently; the set the environment names applies at every startup, which
+  is how a deployment initializes its data. `Reset`, the transition to a named state, is a
+  schema verb of the same class as `Down` and `Force`: destructive, and gated by the
+  application's administrative surface, not by the library.
 - **sqlate** owns everything from the `.sql` file to the scanned row: the session over the pool,
   the dialect and its error classification, transactions, the pattern catalog, compiled
   statements, and the migrator. go-database imports its base module for the `admin` package and
@@ -51,7 +56,7 @@ reports a clean, complete history as of its last operation.
 
 A defect the composition root wires panics; a defect in configuration content returns an error.
 `database.New` panics on an unfinalized config or a nil pool; `admin.New` panics on a nil
-collaborator or the seed switch without a seeder; `postgres.New` panics on an unfinalized config
+collaborator or a seed set named without a seeder; `postgres.New` panics on an unfinalized config
 and returns an error for a reserved connection option. The rule is stated in the `database`
 package comment and applied in all three packages.
 
