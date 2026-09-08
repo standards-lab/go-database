@@ -5,14 +5,9 @@ implementation of the Elemental Architecture: the connection pool with its confi
 lifecycle, and readiness, the database admin service over the `sqlate` library, and the driver
 isolated in the `postgres` provider sub-module.
 
-The design and conventions of this repository are documented in the organization's
-[documentation landing zone](https://github.com/standards-lab/docs); this context records only
-working knowledge the landing zone and the code do not express. The repository page is
-[go-database](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/go-database/index.md),
-under the [Go Elemental](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/index.md)
-standard. Its pages `index.md`, `layers.md`, `dialect.md`, `providers.md`, and `tiers.md`
-describe the module before v0.4.0 and are rewritten by the docs pass (`v1.alignment.docs`);
-until then the `database` and `admin` package comments are the design record.
+The README and each package's `doc.go` document this repository, and the
+[Go Elemental](https://github.com/standards-lab/architecture/blob/main/standards/go-elemental/README.md) standard states the principles it follows; this context records only
+working knowledge the code and the README do not express.
 
 ## Capability map
 
