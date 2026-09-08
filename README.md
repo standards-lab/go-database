@@ -11,9 +11,9 @@ that pins the driver and is released on its own tags.
 ## Standard
 
 `go-database` is an infrastructure library of
-[Go Elemental](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/index.md), the
-minimal-dependency Go standard, and its design is documented on the standard's
-[go-database page](https://github.com/standards-lab/docs/blob/main/standards/go-elemental/go-database/index.md).
+[Go Elemental](https://github.com/standards-lab/architecture/blob/main/standards/go-elemental/README.md), the
+minimal-dependency Go standard. This README and each package's `doc.go` document the
+repository; the standard's principles it enhances are stated below.
 Its repository-level principles:
 
 - The base module depends on the standard library, `go-core`, and `sqlate`; the driver enters a
