@@ -14,9 +14,13 @@ type Transition struct {
 	Seeded Seeded `json:"seeded"`
 }
 
-// Diagnostics is one read of the database's health: the dialect, the ping
-// latency, the server's version when the dialect supplies the statement,
-// the pool's counters, and the pattern namespaces the catalog registered.
+// Diagnostics is one read of the database's health:
+//
+//   - the dialect
+//   - the ping latency
+//   - the server's version, when the dialect supplies the statement
+//   - the pool's counters
+//   - the pattern namespaces the catalog registered
 type Diagnostics struct {
 	Dialect       string        `json:"dialect"`
 	Ping          time.Duration `json:"ping"`
@@ -35,10 +39,12 @@ type Pool struct {
 	WaitDuration time.Duration `json:"wait_duration"`
 }
 
-// Status is the schema's state against the migration set: the applied head,
-// whether it is dirty, the versions still pending, whether the service
-// reports ready (a clean, complete history), and every migration of the
-// set with whether it is applied.
+// Status is the schema's state against the migration set:
+//
+//   - the applied head, and whether it is dirty
+//   - the versions still pending
+//   - whether the service reports ready (a clean, complete history)
+//   - every migration of the set, with whether it is applied
 type Status struct {
 	Version    int             `json:"version"`
 	Dirty      bool            `json:"dirty"`
@@ -65,8 +71,8 @@ type Catalog struct {
 }
 
 // Pattern is one catalog entry: its namespace and name, its tier and
-// native note, the slots its body declares, and the body as the library
-// composes or splices it.
+// native note, the slots its body declares, and the body itself, as the
+// library composes or splices it.
 type Pattern struct {
 	Namespace string   `json:"namespace"`
 	Name      string   `json:"name"`

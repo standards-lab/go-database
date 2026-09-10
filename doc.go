@@ -3,10 +3,10 @@
 // that sizes it. The package depends on the standard library and go-core's
 // config package alone; every driver lives in a provider sub-module
 // (postgres) that constructs the pool, so a consumer imports its provider
-// once, at the composition root. Statements, sessions, transactions, and
-// the dialect are the sqlate library's: the composition root wraps
-// [DB.Conn] with sqlate.Wrap and the engine's dialect, and the admin package
-// administers the schema over both.
+// once, at the composition root. sqlate owns the SQL layer above the pool:
+// statements, sessions, transactions, and the dialect. The composition root
+// wraps [DB.Conn] with sqlate.Wrap and the engine's dialect, and the admin
+// package administers the schema over both.
 //
 // # Wrapper
 //
