@@ -5,8 +5,8 @@ import "github.com/standards-lab/go-core/config"
 // Env names the environment variables [Config.Finalize] reads, composed from
 // the prefix it receives under the "database" segment: DATABASE_HOST,
 // DATABASE_PORT, and the rest, prefixed by whatever [config.EnvName]
-// produces. An empty name disables that one override; the zero value — an
-// empty prefix — disables all of them. Populated by Finalize and exposed for
+// produces. An empty name disables that one override, and the zero Env (an
+// empty prefix) disables all of them. Populated by Finalize and exposed for
 // introspection.
 type Env struct {
 	Host            string

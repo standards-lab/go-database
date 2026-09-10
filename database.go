@@ -74,8 +74,9 @@ func (d *DB) Shutdown(ctx context.Context) error {
 
 // Ready reports live connectivity: false before Start or after Shutdown, and
 // otherwise the result of a ping bounded by the configured conn_timeout. The
-// probe reflects the database now — readiness drops during an outage and
-// recovers with it, at the cost of one bounded round trip per call.
+// probe reflects the database's current state: readiness drops during an
+// outage and recovers when the database does, at the cost of one bounded
+// round trip per call.
 func (d *DB) Ready() bool {
 	if !d.started.Load() {
 		return false

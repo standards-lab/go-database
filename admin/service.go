@@ -104,12 +104,15 @@ type Service struct {
 	ready    atomic.Bool
 }
 
-// New builds the service over pool, the lifecycle object it administers;
-// db, the sqlate session over the same pool; m, the migrator the consumer
-// built over its migration set; and c, the catalog every statement
-// compiles against. A nil pool, db, m, or c panics, as does an opts.Seed
-// name without opts.Seeder: each is a wiring defect at the composition
-// root.
+// New builds the service over its four collaborators:
+//
+//   - pool, the lifecycle object it administers
+//   - db, the sqlate session over the same pool
+//   - m, the migrator the consumer built over its migration set
+//   - c, the catalog every statement compiles against
+//
+// A nil pool, db, m, or c panics, as does an opts.Seed name without
+// opts.Seeder: each is a wiring defect at the composition root.
 func New(pool *database.DB, db *sqlate.DB, m *migrate.Migrator, c *query.Catalog, opts Options) *Service {
 	switch {
 	case pool == nil:
@@ -150,8 +153,8 @@ func (s *Service) Ready() bool { return s.ready.Load() }
 
 // Start brings the schema to the set's head: a pending history is applied
 // under the migrator's lock; a clean, complete one passes. A state the
-// mechanism cannot correct, a dirty row or a history the set does not
-// carry, fails startup; an operator resolves it through the verbs (force,
+// mechanism cannot correct — a dirty row, or a history the set does not
+// carry — fails startup. An operator resolves it through the verbs (force,
 // then up) on a process started against a corrected database, or from
 // another replica. The seeder's statements are then verified against the
 // schema, and the configured set, when there is one, is applied.

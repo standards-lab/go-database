@@ -22,7 +22,7 @@ const (
 // Config holds the connection identity, pool sizing, and timeouts for a SQL
 // database. The numeric and duration fields are tri-state pointers: nil is
 // unset and takes the default, while an explicit zero survives the load and
-// means what it says — an unlimited pool, or no idle connections. Port has no
+// means what it says: an unlimited pool, or no idle connections. Port has no
 // default here because the default port is a provider fact; each provider
 // supplies its own. User and Password are optional because their requiredness
 // varies by provider and auth mode; the password rides the secrets layer of
