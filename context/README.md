@@ -20,7 +20,7 @@ is added when it is about to be built.
   seeder, registry, catalog, and pool. `admin/doc.go` states its startup sequence, its verbs,
   its named states, and its destructive class. One migration set serves one service: a service
   administering several schemas registers several services under distinct lifecycle names.
-  Built; named states landed at `v1.data.sql.tasks.states` (2026-09-07).
+  Built, with named states.
 - **postgres** is the PostgreSQL provider: it constructs the pool over pgx's `database/sql`
   adapter from the configuration block, and supplies no dialect — the dialect is
   `sqlate/postgres`'s. Built.
@@ -28,5 +28,5 @@ is added when it is about to be built.
 `sqlate` (`github.com/standards-lab/sqlate`), a standalone library below this one, owns
 statements, sessions, transactions, the dialect, migrations, and the scripted test driver, as
 the `database` package comment states. The HTTP half of the admin service — the route group and
-handler — is application code. The reference service built it at
-`v1.data.sql.integration.service` (2026-09-06); the template stays engine-free.
+handler — is application code: the reference service builds it, and the template stays
+engine-free.
