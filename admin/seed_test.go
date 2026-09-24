@@ -116,17 +116,17 @@ func TestStart_UnknownConfiguredSetFailsStartup(t *testing.T) {
 	}
 }
 
-// Reset reverts the applied set under the lock, applies it again, seeds
-// the named state's set, and answers with the state, the refreshed
-// status, and the rows.
+// Reset reverts the applied set under the lock and drops its history
+// table, applies it again, seeds the named state's set, and answers with
+// the state, the refreshed status, and the rows.
 func TestReset_RevertsAppliesAndSeeds(t *testing.T) {
-	responses := slices.Concat(reverting(), applying(), current())
+	responses := slices.Concat(resetting(), applying(), current())
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{states: []string{"default", "empty"}}}, responses...)
 	tr, err := f.service.Reset(context.Background(), "empty")
 	if err != nil {
 		t.Fatalf("Reset: %v", err)
 	}
-	if tr.State != "empty" || tr.Schema.Version != 2 || !tr.Schema.Ready || tr.Seeded["things"] != 2 {
+	if tr.State != "empty" || tr.Schema.Sets[0].Version != 2 || !tr.Schema.Ready || tr.Seeded["things"] != 2 {
 		t.Errorf("transition = %+v", tr)
 	}
 	if !slices.Equal(f.seeder.seeded, []string{"empty"}) || !f.service.Ready() || f.rec.Pending() != 0 {
@@ -141,7 +141,7 @@ func TestReset_RevertsAppliesAndSeeds(t *testing.T) {
 		}
 	}
 	want := []string{
-		"SELECT lock($1)", "DROP INDEX CONCURRENTLY ix", "DROP TABLE a",
+		"SELECT lock($1)", "DROP INDEX CONCURRENTLY ix", "DROP TABLE a", "DROP TABLE schema_version",
 		"SELECT lock($1)", "CREATE TABLE a (x int)", "CREATE INDEX CONCURRENTLY ix ON a (x)",
 	}
 	if !slices.Equal(order, want) {
@@ -155,9 +155,13 @@ func TestReset_RevertsAppliesAndSeeds(t *testing.T) {
 func TestReset_DirtyHistoryStopsAtTheRevert(t *testing.T) {
 	dirty := history([]driver.Value{int64(1), "a", false}, []driver.Value{int64(2), "b", true})
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{}},
+		exists(true), applied(), // a clean Verify first, so Ready starts true
 		locked, created, dirty, unlocked,
-		exists(true), head(2, true), exists(true), dirty,
+		exists(true), dirty,
 	)
+	if err := f.service.Verify(context.Background()); err != nil || !f.service.Ready() {
+		t.Fatalf("Verify = %v, ready %v", err, f.service.Ready())
+	}
 	_, err := f.service.Reset(context.Background(), "default")
 	if !errors.Is(err, migrate.ErrDirty) || !strings.HasPrefix(err.Error(), "revert: ") {
 		t.Fatalf("Reset = %v, want the revert's ErrDirty", err)

@@ -39,21 +39,33 @@ type Pool struct {
 	WaitDuration time.Duration `json:"wait_duration"`
 }
 
-// Status is the schema's state against the migration set:
-//
-//   - the applied head, and whether it is dirty
-//   - the versions still pending
-//   - whether the service reports ready (a clean, complete history)
-//   - every migration of the set, with whether it is applied
+// Status is the schema's state against every migration set the migrator
+// runs: whether the service reports ready (every set's history clean and
+// complete), and each set's own state in declared order, the set the
+// others build on first.
 type Status struct {
+	Ready bool        `json:"ready"`
+	Sets  []SetStatus `json:"sets"`
+}
+
+// SetStatus is one migration set's state:
+//
+//   - its name and the history table it is recorded in
+//   - the applied head, the set's latest version, and whether the head is
+//     dirty
+//   - the versions still pending
+//   - every migration of the set, with whether it is applied
+type SetStatus struct {
+	Name       string          `json:"name"`
+	Table      string          `json:"table"`
 	Version    int             `json:"version"`
+	Latest     int             `json:"latest"`
 	Dirty      bool            `json:"dirty"`
 	Pending    []int           `json:"pending"`
-	Ready      bool            `json:"ready"`
 	Migrations []MigrationInfo `json:"migrations"`
 }
 
-// MigrationInfo describes one migration of the set.
+// MigrationInfo describes one migration of a set.
 type MigrationInfo struct {
 	Version       int    `json:"version"`
 	Name          string `json:"name"`

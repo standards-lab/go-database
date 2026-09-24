@@ -18,9 +18,8 @@ is added when it is about to be built.
   sentinels. Built.
 - **admin** is the database admin service over `sqlate`, generic over the consumer's migrator,
   seeder, registry, catalog, and pool. `admin/doc.go` states its startup sequence, its verbs,
-  its named states, and its destructive class. One migration set serves one service: a service
-  administering several schemas registers several services under distinct lifecycle names.
-  Built, with named states.
+  its named states, its destructive class, and its migration sets: one service administers
+  every set its migrator runs. Built.
 - **postgres** is the PostgreSQL provider: it constructs the pool over pgx's `database/sql`
   adapter from the configuration block, and supplies no dialect — the dialect is
   `sqlate/postgres`'s. Built.
