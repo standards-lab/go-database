@@ -7,6 +7,15 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.6.1] - 2026-09-24
+
+### Changed
+
+- The `sqlate` requirement is v0.4.1, whose `Force` writes a set's whole history prefix through
+  the version. On v0.4.0, `Service.Force` forcing a set with more than one migration from 0 back
+  to its head left a history every later `Status`, `Verify`, `Up`, `Down`, and `Reset` refused
+  with `migrate.ErrUnknownVersion`. The service's own code is unchanged.
+
 ## [v0.6.0] - 2026-09-24
 
 The admin service administers a migrator running several migration sets, such as a library's
@@ -199,7 +208,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.6.1...HEAD
+[v0.6.1]: https://github.com/standards-lab/go-database/compare/v0.6.0...v0.6.1
 [v0.6.0]: https://github.com/standards-lab/go-database/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/standards-lab/go-database/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/standards-lab/go-database/compare/v0.3.0...v0.4.0
