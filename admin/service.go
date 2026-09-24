@@ -33,6 +33,10 @@ var (
 	// ErrUnknownState reports a state name the seeder does not declare,
 	// refused before any I/O.
 	ErrUnknownState = errors.New("unknown state")
+
+	// ErrUnknownSet reports a verb that names no migration set, or one the
+	// migrator does not run, refused before any I/O.
+	ErrUnknownSet = errors.New("unknown migration set")
 )
 
 // Seeder is the consumer's seed mechanism over its named sets. A set is
@@ -147,21 +151,24 @@ func (s *Service) Register(lc *lifecycle.Coordinator) {
 	})
 }
 
-// Ready reports whether the history is the set's clean head, as of the
+// Ready reports whether every set's history is its clean head, as of the
 // last operation.
 func (s *Service) Ready() bool { return s.ready.Load() }
 
-// Start brings the schema to the set's head: a pending history is applied
-// under the migrator's lock; a clean, complete one passes. A state the
-// mechanism cannot correct — a dirty row, or a history the set does not
-// carry — fails startup. An operator resolves it through the verbs (force,
-// then up) on a process started against a corrected database, or from
-// another replica. The seeder's statements are then verified against the
-// schema, and the configured set, when there is one, is applied.
+// Start brings every set to its head: pending migrations are applied under
+// the migrator's lock, after the pending versions are logged set by set;
+// a clean, complete history passes. A state the mechanism cannot correct —
+// a dirty row, or a history a set does not carry — fails startup. An
+// operator resolves it through the verbs (force the named set, then up) on
+// a process started against a corrected database, or from another replica.
+// The seeder's statements are then verified against the schema, and the
+// configured set, when there is one, is applied.
 func (s *Service) Start(ctx context.Context) error {
 	err := s.migrator.Verify(ctx)
-	if pending, ok := errors.AsType[*migrate.PendingError](err); ok {
-		s.logger.InfoContext(ctx, "schema pending; applying", "versions", pending.Versions)
+	if errors.Is(err, migrate.ErrPending) {
+		if err := s.logPending(ctx); err != nil {
+			return err
+		}
 		if err := s.migrator.Up(ctx); err != nil {
 			return fmt.Errorf("apply: %w", err)
 		}
@@ -171,11 +178,10 @@ func (s *Service) Start(ctx context.Context) error {
 		return err // the lifecycle prefixes the service name
 	}
 	s.ready.Store(true)
-	v, err := s.migrator.Version(ctx)
-	if err != nil {
-		return err
+	// A clean, complete history puts every set at its latest version.
+	for _, l := range s.migrator.Layers() {
+		s.logger.InfoContext(ctx, "schema current", "set", l.Name(), "version", latest(l.Migrations()))
 	}
-	s.logger.InfoContext(ctx, "schema current", "version", v.Version)
 	if s.seeder != nil {
 		if err := s.seeder.Verify(ctx); err != nil {
 			s.ready.Store(false)
@@ -188,6 +194,21 @@ func (s *Service) Start(ctx context.Context) error {
 			return fmt.Errorf("seed: %w", err)
 		}
 		s.logger.InfoContext(ctx, "seeded", "state", s.seed, "rows", n)
+	}
+	return nil
+}
+
+// logPending logs each set's pending versions, so an operator sees what a
+// start applies before it runs.
+func (s *Service) logPending(ctx context.Context) error {
+	sets, err := s.migrator.Status(ctx)
+	if err != nil {
+		return err
+	}
+	for _, st := range sets {
+		if len(st.Pending) > 0 {
+			s.logger.InfoContext(ctx, "schema pending; applying", "set", st.Name, "versions", versions(st.Pending))
+		}
 	}
 	return nil
 }
@@ -219,18 +240,19 @@ func (s *Service) Seed(ctx context.Context, state string) (Seeded, error) {
 	return s.seeder.Seed(ctx, state)
 }
 
-// Reset brings the database to the named state: every applied migration
-// is reverted, the whole set is applied, and the state's set is seeded,
-// each through the same function the verbs and Start run. The revert and
-// the apply each hold the migrator's lock; the seed runs outside it, as
-// Seed does. The request is refused before any I/O the way Seed refuses;
-// a failure at any step leaves the schema where that step stopped, and
-// the status is still read so Ready reflects it.
+// Reset brings the database to the named state: every migration set is
+// reverted, the last declared first, with its history table dropped; every
+// set is applied again in declared order; and the state's seed set is
+// applied, each through the same function the verbs and Start run. The
+// revert and the apply each hold the migrator's lock; the seed runs outside
+// it, as Seed does. The request is refused before any I/O the way Seed
+// refuses; a failure at any step leaves the schema where that step stopped,
+// and the status is still read so Ready reflects it.
 func (s *Service) Reset(ctx context.Context, state string) (Transition, error) {
 	if err := s.checkState(state); err != nil {
 		return Transition{}, err
 	}
-	if err := s.migrator.Down(ctx, len(s.migrator.Migrations())); err != nil {
+	if err := s.migrator.Reset(ctx); err != nil {
 		_, _ = s.Status(ctx)
 		return Transition{}, fmt.Errorf("revert: %w", err)
 	}
@@ -264,9 +286,9 @@ func (s *Service) checkState(state string) error {
 	return nil
 }
 
-// Verify checks that the history is the set's clean head and, when it is,
-// that the seeder's statements prepare against it; the error names what is
-// wrong. Ready follows the result.
+// Verify checks that every set's history is its clean head and, when it
+// is, that the seeder's statements prepare against the schema; the error
+// names the set or statement that is wrong. Ready follows the result.
 func (s *Service) Verify(ctx context.Context) error {
 	err := s.migrator.Verify(ctx)
 	if err == nil && s.seeder != nil {
@@ -276,60 +298,94 @@ func (s *Service) Verify(ctx context.Context) error {
 	return err
 }
 
-// Status reads the schema's state and refreshes Ready from it.
+// Status reads every set's state, in declared order, and refreshes Ready
+// from it: ready when no set is dirty or pending.
 func (s *Service) Status(ctx context.Context) (Status, error) {
-	v, err := s.migrator.Version(ctx)
+	sets, err := s.migrator.Status(ctx)
 	if err != nil {
 		return Status{}, err
 	}
-	st := Status{Version: v.Version, Dirty: v.Dirty, Pending: []int{}, Migrations: []MigrationInfo{}}
-	verr := s.migrator.Verify(ctx)
-	if pending, ok := errors.AsType[*migrate.PendingError](verr); ok {
-		st.Pending = pending.Versions
+	st := Status{Ready: true, Sets: make([]SetStatus, 0, len(sets))}
+	for i, l := range s.migrator.Layers() {
+		ss := sets[i]
+		out := SetStatus{
+			Name: ss.Name, Table: ss.Table, Version: ss.Version, Latest: ss.Latest, Dirty: ss.Dirty,
+			Pending: versions(ss.Pending), Migrations: []MigrationInfo{},
+		}
+		for _, m := range l.Migrations() {
+			out.Migrations = append(out.Migrations, MigrationInfo{
+				Version: m.Version, Name: m.Name, Transactional: m.Transactional,
+				Applied: m.Version < ss.Version || (m.Version == ss.Version && !ss.Dirty),
+			})
+		}
+		if out.Dirty || len(out.Pending) > 0 {
+			st.Ready = false
+		}
+		st.Sets = append(st.Sets, out)
 	}
-	st.Ready = verr == nil
 	s.ready.Store(st.Ready)
-	for _, m := range s.migrator.Migrations() {
-		st.Migrations = append(st.Migrations, MigrationInfo{
-			Version: m.Version, Name: m.Name, Transactional: m.Transactional,
-			Applied: m.Version < v.Version || (m.Version == v.Version && !v.Dirty),
-		})
-	}
 	return st, nil
 }
 
-// Up applies every pending migration and returns the resulting state.
+// Up applies every pending migration of every set, in declared order, and
+// returns the resulting state.
 func (s *Service) Up(ctx context.Context) (Status, error) {
 	return s.after(ctx, s.migrator.Up(ctx))
 }
 
-// Down reverts the n most recent migrations; n must be positive.
-func (s *Service) Down(ctx context.Context, n int) (Status, error) {
+// Down reverts the named set's n most recent migrations; n must be
+// positive. A set above it with applied migrations refuses the revert.
+func (s *Service) Down(ctx context.Context, set string, n int) (Status, error) {
+	l, err := s.layer(set)
+	if err != nil {
+		return Status{}, err
+	}
 	if n <= 0 {
 		return Status{}, fmt.Errorf("%w: steps must be positive", ErrValidation)
 	}
-	return s.after(ctx, s.migrator.Down(ctx, n))
+	return s.after(ctx, l.Down(ctx, n))
 }
 
-// Steps applies n pending migrations when n is positive, or reverts -n
-// applied ones when it is negative; zero is rejected.
-func (s *Service) Steps(ctx context.Context, n int) (Status, error) {
+// Steps applies the named set's next n pending migrations when n is
+// positive, or reverts its last -n applied ones when it is negative; zero
+// is rejected. A set below it with pending migrations refuses an apply, and
+// a set above it with applied ones refuses a revert.
+func (s *Service) Steps(ctx context.Context, set string, n int) (Status, error) {
+	l, err := s.layer(set)
+	if err != nil {
+		return Status{}, err
+	}
 	if n == 0 {
 		return Status{}, fmt.Errorf("%w: steps must be non-zero", ErrValidation)
 	}
-	return s.after(ctx, s.migrator.Steps(ctx, n))
+	return s.after(ctx, l.Steps(ctx, n))
 }
 
-// Force sets the history to version, clearing dirty state; 0 empties it.
-// It never touches the schema: it exists to clear a dirty row after the
-// operator has repaired the schema by hand, and it can just as well
-// manufacture one, since a forced-down history re-applies files against
-// objects that still exist.
-func (s *Service) Force(ctx context.Context, version int) (Status, error) {
+// Force sets the named set's history to version, clearing its dirty state;
+// 0 empties it. It never touches the schema and checks no set's history
+// first: it is the repair for a dirty set once the operator has fixed the
+// failed migration's objects by hand, followed by Up. It can just as well
+// manufacture a dirty state, since a forced-down history re-applies files
+// against objects that still exist.
+func (s *Service) Force(ctx context.Context, set string, version int) (Status, error) {
+	l, err := s.layer(set)
+	if err != nil {
+		return Status{}, err
+	}
 	if version < 0 {
 		return Status{}, fmt.Errorf("%w: version must not be negative", ErrValidation)
 	}
-	return s.after(ctx, s.migrator.Force(ctx, version))
+	return s.after(ctx, l.Force(ctx, version))
+}
+
+// layer resolves a verb's set name, refusing an empty or undeclared one
+// with [ErrUnknownSet] before any I/O.
+func (s *Service) layer(set string) (migrate.Layer, error) {
+	l, ok := s.migrator.Layer(set)
+	if set == "" || !ok {
+		return migrate.Layer{}, fmt.Errorf("%w: %q", ErrUnknownSet, set)
+	}
+	return l, nil
 }
 
 // after returns the state following a mutating operation, or the
@@ -428,4 +484,21 @@ func (s *Service) serverVersion(ctx context.Context, statement string) (string, 
 		}
 	}
 	return version, s.db.MapError(rows.Err())
+}
+
+// versions lists the migrations' versions, empty rather than nil.
+func versions(ms []migrate.Migration) []int {
+	out := make([]int, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, m.Version)
+	}
+	return out
+}
+
+// latest is the version of a set's last migration, 0 for an empty set.
+func latest(ms []migrate.Migration) int {
+	if len(ms) == 0 {
+		return 0
+	}
+	return ms[len(ms)-1].Version
 }

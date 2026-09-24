@@ -28,7 +28,6 @@ var set = []migrate.Migration{
 
 var (
 	historyCols = []string{"version", "name", "dirty"}
-	headCols    = []string{"version", "dirty"}
 	locked      = sqltest.Response{}
 	created     = sqltest.Response{}
 	unlocked    = sqltest.Response{Columns: []string{"unlock"}, Rows: [][]driver.Value{{true}}}
@@ -46,10 +45,6 @@ func history(rows ...[]driver.Value) sqltest.Response {
 	return sqltest.Response{Columns: historyCols, Rows: rows}
 }
 
-func head(version int64, dirty bool) sqltest.Response {
-	return sqltest.Response{Columns: headCols, Rows: [][]driver.Value{{version, dirty}}}
-}
-
 // applied is the history of the whole set, clean.
 func applied() sqltest.Response {
 	var rows [][]driver.Value
@@ -59,10 +54,10 @@ func applied() sqltest.Response {
 	return history(rows...)
 }
 
-// clean is the script of a Start over a complete, clean history: Verify,
-// then Version.
+// clean is the script of a Start over a complete, clean history: Verify
+// alone, since a clean history puts the set at its latest version.
 func clean() []sqltest.Response {
-	return []sqltest.Response{exists(true), applied(), exists(true), head(2, false)}
+	return []sqltest.Response{exists(true), applied()}
 }
 
 // applying is the script of an Up over an empty database: the lock, the
@@ -80,10 +75,10 @@ func applying() []sqltest.Response {
 	return append(rs, unlocked)
 }
 
-// reverting is the script of a Down over the whole applied set: the lock,
-// the history table, the complete history, each migration's statements
-// in reverse, and the unlock.
-func reverting() []sqltest.Response {
+// resetting is the script of a Reset over the whole applied set: the lock,
+// the history table, the complete history, each migration's statements in
+// reverse, the history table's drop, and the unlock.
+func resetting() []sqltest.Response {
 	rs := []sqltest.Response{locked, created, applied()}
 	for i := len(set) - 1; i >= 0; i-- {
 		if set[i].Transactional {
@@ -92,13 +87,13 @@ func reverting() []sqltest.Response {
 			rs = append(rs, sqltest.Response{}, sqltest.Response{}, sqltest.Response{}) // dirty, down, delete
 		}
 	}
-	return append(rs, unlocked)
+	return append(rs, sqltest.Response{}, unlocked) // drop
 }
 
-// current is the script of a Status over a complete, clean history:
-// Version, then Verify.
+// current is the script of a Status over a complete, clean history: the
+// history table's existence, then the history.
 func current() []sqltest.Response {
-	return []sqltest.Response{exists(true), head(2, false), exists(true), applied()}
+	return []sqltest.Response{exists(true), applied()}
 }
 
 // testDialect is the stub dialect with the two capabilities an engine
@@ -175,13 +170,20 @@ type fixture struct {
 }
 
 // newFixture builds the service over the fake pool with dialect d, the
-// migration set, the library's own patterns, a one-statement registry, and
-// opts, whose Seeder, when set, is the fake the fixture exposes.
+// migration set as the one set "app", the library's own patterns, a
+// one-statement registry, and opts, whose Seeder, when set, is the fake the
+// fixture exposes.
 func newFixture(t *testing.T, d sqlate.Dialect, opts admin.Options, responses ...sqltest.Response) fixture {
+	t.Helper()
+	return newSetsFixture(t, []migrate.Set{{Name: "app", Migrations: set}}, d, opts, responses...)
+}
+
+// newSetsFixture is newFixture over a migrator running sets.
+func newSetsFixture(t *testing.T, sets []migrate.Set, d sqlate.Dialect, opts admin.Options, responses ...sqltest.Response) fixture {
 	t.Helper()
 	pool, rec := sqltest.Open(t, responses...)
 	db := sqlate.Wrap(pool, d)
-	m, err := migrate.New(db, set, migrate.Options{})
+	m, err := migrate.New(db, sets, migrate.Options{})
 	if err != nil {
 		t.Fatalf("migrate.New: %v", err)
 	}
@@ -218,7 +220,7 @@ func wantPanic(t *testing.T, want string, fn func()) {
 func TestNew_PanicsOnWiringDefects(t *testing.T) {
 	pool, _ := sqltest.Open(t)
 	db := sqlate.Wrap(pool, testDialect{})
-	m, err := migrate.New(db, set, migrate.Options{})
+	m, err := migrate.New(db, []migrate.Set{{Name: "app", Migrations: set}}, migrate.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,10 +255,10 @@ func TestStart_CleanHistoryIsReady(t *testing.T) {
 	}
 }
 
-// Start on an empty database applies the whole set under the lock, then
-// verifies.
+// Start on an empty database reads the pending set, applies it under the
+// lock, then verifies.
 func TestStart_PendingHistoryIsApplied(t *testing.T) {
-	responses := append(append([]sqltest.Response{exists(false)}, applying()...), clean()...)
+	responses := slices.Concat([]sqltest.Response{exists(false), exists(false)}, applying(), clean())
 	s, rec := newService(t, responses...)
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -307,21 +309,23 @@ func TestRegister_DeclaresTheSchemaStage(t *testing.T) {
 	}
 }
 
-// Status reads the head and the pending set, marks each migration, and
-// refreshes Ready.
+// Status reads the set's head, latest version, and pending versions,
+// marks each migration, and refreshes Ready.
 func TestStatus_ReportsHeadAndPending(t *testing.T) {
-	s, rec := newService(t,
-		exists(true), head(1, false), exists(true), history([]driver.Value{int64(1), "a", false}),
-	)
+	s, rec := newService(t, exists(true), history([]driver.Value{int64(1), "a", false}))
 	st, err := s.Status(context.Background())
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
-	if st.Version != 1 || st.Dirty || st.Ready || !slices.Equal(st.Pending, []int{2}) {
-		t.Errorf("status = %+v", st)
+	if st.Ready || len(st.Sets) != 1 {
+		t.Fatalf("status = %+v", st)
 	}
-	if len(st.Migrations) != 2 || !st.Migrations[0].Applied || st.Migrations[1].Applied || st.Migrations[1].Transactional {
-		t.Errorf("migrations = %+v", st.Migrations)
+	app := st.Sets[0]
+	if app.Name != "app" || app.Table != migrate.DefaultTable || app.Version != 1 || app.Latest != 2 || app.Dirty || !slices.Equal(app.Pending, []int{2}) {
+		t.Errorf("set = %+v", app)
+	}
+	if len(app.Migrations) != 2 || !app.Migrations[0].Applied || app.Migrations[1].Applied || app.Migrations[1].Transactional {
+		t.Errorf("migrations = %+v", app.Migrations)
 	}
 	if s.Ready() || rec.Pending() != 0 {
 		t.Errorf("ready = %v, pending = %d", s.Ready(), rec.Pending())
@@ -352,10 +356,10 @@ func TestVerbs_ValidateBeforeIO(t *testing.T) {
 	s, rec := newService(t)
 	ctx := context.Background()
 	cases := map[string]func() (admin.Status, error){
-		"down 0":   func() (admin.Status, error) { return s.Down(ctx, 0) },
-		"down -1":  func() (admin.Status, error) { return s.Down(ctx, -1) },
-		"steps 0":  func() (admin.Status, error) { return s.Steps(ctx, 0) },
-		"force -1": func() (admin.Status, error) { return s.Force(ctx, -1) },
+		"down 0":   func() (admin.Status, error) { return s.Down(ctx, "app", 0) },
+		"down -1":  func() (admin.Status, error) { return s.Down(ctx, "app", -1) },
+		"steps 0":  func() (admin.Status, error) { return s.Steps(ctx, "app", 0) },
+		"force -1": func() (admin.Status, error) { return s.Force(ctx, "app", -1) },
 	}
 	for name, verb := range cases {
 		if _, err := verb(); !errors.Is(err, admin.ErrValidation) {
@@ -375,7 +379,7 @@ func TestUp_ReturnsRefreshedStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Up: %v", err)
 	}
-	if st.Version != 2 || !st.Ready || len(st.Pending) != 0 || !s.Ready() || rec.Pending() != 0 {
+	if !st.Ready || st.Sets[0].Version != 2 || len(st.Sets[0].Pending) != 0 || !s.Ready() || rec.Pending() != 0 {
 		t.Errorf("status = %+v, ready = %v, pending responses = %d", st, s.Ready(), rec.Pending())
 	}
 }
@@ -384,7 +388,7 @@ func TestUp_ReturnsRefreshedStatus(t *testing.T) {
 // read so Ready reflects the schema.
 func TestForce_OutsideTheSetIsTheMigratorsError(t *testing.T) {
 	s, _ := newService(t)
-	_, err := s.Force(context.Background(), 9)
+	_, err := s.Force(context.Background(), "app", 9)
 	if !errors.Is(err, migrate.ErrVersionNotFound) {
 		t.Errorf("Force 9 = %v, want ErrVersionNotFound", err)
 	}
@@ -458,7 +462,7 @@ func TestStatements_ReadTheRegistryWithoutIO(t *testing.T) {
 func TestStatements_NoRegistryReportsNoDomains(t *testing.T) {
 	pool, _ := sqltest.Open(t)
 	db := sqlate.Wrap(pool, testDialect{})
-	m, err := migrate.New(db, set, migrate.Options{})
+	m, err := migrate.New(db, []migrate.Set{{Name: "app", Migrations: set}}, migrate.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
