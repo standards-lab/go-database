@@ -18,7 +18,7 @@ shipped set beneath the consumer's own. The first such set is `blobfs`'s.
   its own history table.
 - **Breaking:** `admin.Status` is `{Ready, Sets}`: one `admin.SetStatus` per set, in declared
   order, with its name, history table, head, latest version, dirty mark, pending versions, and
-  migrations. Ready is every set clean and complete.
+  migrations. Ready is true when every set is clean and complete.
 - **Breaking:** `Service.Down`, `Service.Steps`, and `Service.Force` take the name of the set
   they act on. `Force(ctx, set, version)` is the repair for a dirty set.
 - `Service.Reset` reverts every set, the last declared first, dropping each history table, then
@@ -28,8 +28,8 @@ shipped set beneath the consumer's own. The first such set is `blobfs`'s.
 
 ### Added
 
-- `admin.ErrUnknownSet`: a verb that names no set, or one the migrator does not run, refused
-  before any I/O.
+- `admin.ErrUnknownSet`, returned before any I/O when a verb names no set or a set the migrator
+  does not run.
 - `admin.SetStatus`.
 
 ## [v0.5.0] - 2026-09-07

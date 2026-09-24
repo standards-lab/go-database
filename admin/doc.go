@@ -23,13 +23,14 @@
 //
 // # Migration sets
 //
-// The migrator runs one or more migration sets, declared bottom-first, each
-// over its own history table: a library's shipped set beneath the
-// consumer's own, for one. One service administers every set the migrator
-// runs. A read or a whole-schema operation covers every set in declared
-// order; a verb that targets one set takes its name, and an empty or
-// undeclared name is [ErrUnknownSet], refused before any I/O. A migrator
-// over one set is the same service with one entry in each report.
+// One service administers every migration set its migrator runs. The
+// migrator runs one or more sets, each over its own history table,
+// declared bottom-first: a set comes before the sets that build on it, as
+// a library's shipped set comes beneath the consumer's own. A read or a
+// whole-schema operation covers every set in declared order. A verb that
+// targets one set takes its name; an empty or undeclared name is
+// [ErrUnknownSet], refused before any I/O. A migrator over one set is the
+// same service with one entry in each report.
 //
 // # Startup
 //
@@ -62,9 +63,9 @@
 //   - [Service.Seed] applies a named seed set, or the configured one, over
 //     the schema as it stands.
 //   - [Service.Reset] reverts every migration set, the last declared first,
-//     dropping each history table; applies every set again; and seeds the
-//     named state's set — the one transition that brings a database to a
-//     named state from any other.
+//     dropping each history table; applies every set again; and applies
+//     the named state's seed set. It is the one transition that brings a
+//     database to a named state from any other.
 //   - [Service.Catalog] and [Service.Statements] read the pattern catalog
 //     and the statements registry without I/O.
 //   - [Service.Diagnose] pings the pool, reads the server's version through
@@ -73,17 +74,17 @@
 //
 // A seed operation without a seeder or a set is [ErrSeedDisabled]; an
 // undeclared name is [ErrUnknownState]. Reset is destructive, in the class
-// of Down and Force; the administrative surface decides who may call it,
+// of Down and Force; the administrative surface decides who may call it
 // and asks for confirmation. The HTTP half, a route group over these
 // methods, is application code.
 //
 // # Dirty-set repair
 //
 // A non-transactional migration that fails partway leaves its set's head
-// dirty, and every run that writes refuses until it is cleared. Force is
-// the repair: the operator fixes the failed migration's objects by hand,
-// forces the named set to the version that is applied, then runs Up.
-// Force touches no schema and checks no history first, since the set it
-// repairs is the dirty one. After a revert refused partway through, Status
-// is what tells the operator where each set stands.
+// dirty, and every run that writes refuses until the mark is cleared.
+// Force is the repair: the operator fixes the failed migration's objects
+// by hand, forces the named set to the version that is applied, then runs
+// Up. Force touches no schema and checks no history first, since the set
+// it repairs is the dirty one. When a revert is refused partway through,
+// [Service.Status] reports where each set stands.
 package admin

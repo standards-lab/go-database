@@ -155,14 +155,14 @@ func (s *Service) Register(lc *lifecycle.Coordinator) {
 // last operation.
 func (s *Service) Ready() bool { return s.ready.Load() }
 
-// Start brings every set to its head: pending migrations are applied under
-// the migrator's lock, after the pending versions are logged set by set;
-// a clean, complete history passes. A state the mechanism cannot correct —
-// a dirty row, or a history a set does not carry — fails startup. An
-// operator resolves it through the verbs (force the named set, then up) on
-// a process started against a corrected database, or from another replica.
+// Start brings every set to its head: pending migrations are logged set by
+// set, then applied under the migrator's lock; a clean, complete history
+// passes. A state the mechanism cannot correct — a dirty row, or a history
+// a set does not carry — fails startup. An operator resolves it through the
+// verbs (force the named set, then up) on a process started against a
+// corrected database, or from another replica.
 // The seeder's statements are then verified against the schema, and the
-// configured set, when there is one, is applied.
+// configured seed set, when there is one, is applied.
 func (s *Service) Start(ctx context.Context) error {
 	err := s.migrator.Verify(ctx)
 	if errors.Is(err, migrate.ErrPending) {
@@ -363,8 +363,8 @@ func (s *Service) Steps(ctx context.Context, set string, n int) (Status, error) 
 
 // Force sets the named set's history to version, clearing its dirty state;
 // 0 empties it. It never touches the schema and checks no set's history
-// first: it is the repair for a dirty set once the operator has fixed the
-// failed migration's objects by hand, followed by Up. It can just as well
+// first: it repairs a dirty set once the operator has fixed the failed
+// migration's objects by hand, and Up follows it. It can just as well
 // manufacture a dirty state, since a forced-down history re-applies files
 // against objects that still exist.
 func (s *Service) Force(ctx context.Context, set string, version int) (Status, error) {

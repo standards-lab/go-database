@@ -41,7 +41,7 @@ type Pool struct {
 
 // Status is the schema's state against every migration set the migrator
 // runs: whether the service reports ready (every set's history clean and
-// complete), and each set's own state, in declared order, the set that
+// complete), and each set's own state in declared order, the set the
 // others build on first.
 type Status struct {
 	Ready bool        `json:"ready"`

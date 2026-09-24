@@ -36,7 +36,7 @@ principles:
 - `admin` is the database admin service: schema verification, migration, seeding, named states,
   and diagnostics, run at startup and on demand as operations over `sqlate`'s functions. One
   service administers every migration set its migrator runs: status and reset cover them all,
-  and the verbs that target one set, including `force` for dirty-set repair, name it.
+  and the verbs that target one set, including `force` for dirty-set repair, take its name.
 - `postgres` is the PostgreSQL provider: it constructs the pool over pgx's `database/sql` adapter
   from the configuration block.
 
