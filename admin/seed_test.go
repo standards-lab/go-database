@@ -155,9 +155,13 @@ func TestReset_RevertsAppliesAndSeeds(t *testing.T) {
 func TestReset_DirtyHistoryStopsAtTheRevert(t *testing.T) {
 	dirty := history([]driver.Value{int64(1), "a", false}, []driver.Value{int64(2), "b", true})
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{}},
+		exists(true), applied(), // a clean Verify first, so Ready starts true
 		locked, created, dirty, unlocked,
 		exists(true), dirty,
 	)
+	if err := f.service.Verify(context.Background()); err != nil || !f.service.Ready() {
+		t.Fatalf("Verify = %v, ready %v", err, f.service.Ready())
+	}
 	_, err := f.service.Reset(context.Background(), "default")
 	if !errors.Is(err, migrate.ErrDirty) || !strings.HasPrefix(err.Error(), "revert: ") {
 		t.Fatalf("Reset = %v, want the revert's ErrDirty", err)

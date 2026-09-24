@@ -157,6 +157,8 @@ func TestSets_ForceRepairsTheNamedDirtySet(t *testing.T) {
 		// Up refused at the preflight.
 		[]sqltest.Response{locked, created, baseApplied(), created, dirtyApp, unlocked},
 		[]sqltest.Response{exists(true), baseApplied(), exists(true), dirtyApp},
+		// The status read after the refusal.
+		[]sqltest.Response{exists(true), baseApplied(), exists(true), dirtyApp},
 		// Force app to 1: create, delete above, mark clean (affects the
 		// row, so no insert).
 		[]sqltest.Response{locked, {}, {}, {Affected: 1}, unlocked},
@@ -173,7 +175,17 @@ func TestSets_ForceRepairsTheNamedDirtySet(t *testing.T) {
 	} else if se, ok := errors.AsType[*migrate.SetError](err); !ok || se.Set != "app" {
 		t.Errorf("Up error = %v, want it to name app", err)
 	}
-	st, err := f.service.Force(ctx, "app", 1)
+	st, err := f.service.Status(ctx)
+	if err != nil || st.Ready || f.service.Ready() {
+		t.Fatalf("Status over a dirty set = %+v, %v; ready %v", st, err, f.service.Ready())
+	}
+	if a := st.Sets[1]; !a.Dirty || a.Version != 2 || len(a.Pending) != 0 || !a.Migrations[0].Applied || a.Migrations[1].Applied {
+		t.Errorf("dirty app = %+v", a)
+	}
+	if b := st.Sets[0]; b.Dirty || b.Version != 1 {
+		t.Errorf("base beside a dirty app = %+v", b)
+	}
+	st, err = f.service.Force(ctx, "app", 1)
 	if err != nil {
 		t.Fatalf("Force app 1: %v", err)
 	}
@@ -234,5 +246,43 @@ func TestSets_UnknownSetRefusedBeforeIO(t *testing.T) {
 	}
 	if len(f.rec.Calls()) != 0 {
 		t.Errorf("refused verbs reached the database: %v", f.rec.Ops())
+	}
+}
+
+// With one set pending and another dirty, Start logs nothing as applying:
+// Up refuses the run, and startup fails naming the dirty set.
+func TestSets_StartOverADirtySetLogsNoApply(t *testing.T) {
+	var buf bytes.Buffer
+	dirtyApp := history([]driver.Value{int64(1), "a", false}, []driver.Value{int64(2), "b", true})
+	f := newSetsService(t, admin.Options{Logger: slog.New(slog.NewTextHandler(&buf, nil))},
+		exists(false),                         // Verify stops at base, pending
+		exists(false), exists(true), dirtyApp, // the pending read
+		locked, created, history(), created, dirtyApp, unlocked, // Up refused
+	)
+	err := f.service.Start(context.Background())
+	if !errors.Is(err, migrate.ErrDirty) || !strings.Contains(err.Error(), `"app"`) {
+		t.Fatalf("Start = %v, want the dirty app refusal", err)
+	}
+	if strings.Contains(buf.String(), "applying") || f.service.Ready() {
+		t.Errorf("ready %v, log:\n%s", f.service.Ready(), buf.String())
+	}
+}
+
+// A history row the set does not carry, as a newer replica leaves it, is
+// Status's error, and it clears a Ready an earlier check had set.
+func TestSets_StatusOverAnUnknownRowClearsReady(t *testing.T) {
+	newer := history([]driver.Value{int64(1), "a", false}, []driver.Value{int64(2), "b", false}, []driver.Value{int64(3), "c", false})
+	f := newSetsService(t, admin.Options{},
+		slices.Concat(bothCurrent(), []sqltest.Response{exists(true), baseApplied(), exists(true), newer})...)
+	ctx := context.Background()
+	if err := f.service.Verify(ctx); err != nil || !f.service.Ready() {
+		t.Fatalf("Verify = %v, ready %v", err, f.service.Ready())
+	}
+	_, err := f.service.Status(ctx)
+	if !errors.Is(err, migrate.ErrUnknownVersion) {
+		t.Fatalf("Status = %v, want ErrUnknownVersion", err)
+	}
+	if f.service.Ready() {
+		t.Error("ready after a history the set does not carry")
 	}
 }

@@ -112,7 +112,7 @@ type Service struct {
 //
 //   - pool, the lifecycle object it administers
 //   - db, the sqlate session over the same pool
-//   - m, the migrator the consumer built over its migration set
+//   - m, the migrator the consumer built over its migration sets
 //   - c, the catalog every statement compiles against
 //
 // A nil pool, db, m, or c panics, as does an opts.Seed name without
@@ -199,11 +199,17 @@ func (s *Service) Start(ctx context.Context) error {
 }
 
 // logPending logs each set's pending versions, so an operator sees what a
-// start applies before it runs.
+// start applies before it runs. A dirty set logs nothing: Up refuses the
+// run, and its error names the set.
 func (s *Service) logPending(ctx context.Context) error {
 	sets, err := s.migrator.Status(ctx)
 	if err != nil {
 		return err
+	}
+	for _, st := range sets {
+		if st.Dirty {
+			return nil
+		}
 	}
 	for _, st := range sets {
 		if len(st.Pending) > 0 {
@@ -299,10 +305,13 @@ func (s *Service) Verify(ctx context.Context) error {
 }
 
 // Status reads every set's state, in declared order, and refreshes Ready
-// from it: ready when no set is dirty or pending.
+// from it: ready when no set is dirty or pending. A history that cannot be
+// read, or that carries a row its set does not, is an error, and Ready is
+// cleared: the service cannot claim a clean schema it cannot account for.
 func (s *Service) Status(ctx context.Context) (Status, error) {
 	sets, err := s.migrator.Status(ctx)
 	if err != nil {
+		s.ready.Store(false)
 		return Status{}, err
 	}
 	st := Status{Ready: true, Sets: make([]SetStatus, 0, len(sets))}
