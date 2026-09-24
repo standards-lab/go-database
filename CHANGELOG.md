@@ -7,6 +7,31 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-09-24
+
+The admin service administers a migrator running several migration sets, such as a library's
+shipped set beneath the consumer's own. The first such set is `blobfs`'s.
+
+### Changed
+
+- The `sqlate` requirement is v0.4.0, whose migrator runs one or more `migrate.Set`s, each over
+  its own history table.
+- **Breaking:** `admin.Status` is `{Ready, Sets}`: one `admin.SetStatus` per set, in declared
+  order, with its name, history table, head, latest version, dirty mark, pending versions, and
+  migrations. Ready is every set clean and complete.
+- **Breaking:** `Service.Down`, `Service.Steps`, and `Service.Force` take the name of the set
+  they act on. `Force(ctx, set, version)` is the repair for a dirty set.
+- `Service.Reset` reverts every set, the last declared first, dropping each history table, then
+  applies every set and seeds the named state. It reverted only the one set before.
+- `Service.Start` logs the pending migrations set by set before it applies them, and each set's
+  head once current.
+
+### Added
+
+- `admin.ErrUnknownSet`: a verb that names no set, or one the migrator does not run, refused
+  before any I/O.
+- `admin.SetStatus`.
+
 ## [v0.5.0] - 2026-09-07
 
 ### Changed
@@ -171,7 +196,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.6.0...HEAD
+[v0.6.0]: https://github.com/standards-lab/go-database/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/standards-lab/go-database/compare/v0.4.0...v0.5.0
 [v0.4.0]: https://github.com/standards-lab/go-database/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/standards-lab/go-database/compare/v0.2.0...v0.3.0

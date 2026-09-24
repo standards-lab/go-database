@@ -26,14 +26,17 @@ principles:
   library constructs with `sqlate.Wrap` and the engine's dialect from `sqlate/postgres`, and the
   provider's native API stays reachable through `DB.Conn()` and the `Options` map.
 - Swapping the SQL provider is a port. The consumer owns its schema, its migrations, and its
-  domain SQL, and those are what a swap rewrites.
+  domain SQL, and those are what a swap rewrites. A library that ships its own migration set,
+  such as `blobfs`, owns that set; the consumer declares it beneath its own.
 
 ## Packages
 
 - `database` wraps a `database/sql` pool with lifecycle integration and holds the service's
   configuration block and its connectivity error sentinels.
 - `admin` is the database admin service: schema verification, migration, seeding, named states,
-  and diagnostics, run at startup and on demand as operations over `sqlate`'s functions.
+  and diagnostics, run at startup and on demand as operations over `sqlate`'s functions. One
+  service administers every migration set its migrator runs: status and reset cover them all,
+  and the verbs that target one set, including `force` for dirty-set repair, name it.
 - `postgres` is the PostgreSQL provider: it constructs the pool over pgx's `database/sql` adapter
   from the configuration block.
 
