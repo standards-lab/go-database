@@ -7,6 +7,11 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+### Changed
+
+- `admin.Stage`'s documentation names only what it orders against, the pool at stage 0, and no
+  longer the stage a consumer's domains verify at, which is the consumer's to choose.
+
 ## [v0.6.1] - 2026-09-24
 
 ### Changed

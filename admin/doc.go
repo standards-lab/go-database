@@ -35,8 +35,8 @@
 // # Startup
 //
 // [Service.Register] declares the service on a lifecycle coordinator at
-// [Stage], after the pool at stage 0 and before the domains verify their
-// statements at stage 2. [Service.Start] verifies every set's history; when
+// [Stage], after the pool at stage 0; whatever needs the corrected schema
+// runs at a later stage the consumer chooses. [Service.Start] verifies every set's history; when
 // migrations are pending, it logs them set by set, applies them under the
 // migrator's lock, and verifies again. It then verifies the seeder's
 // statements and applies the configured seed set when there is one:
