@@ -7,6 +7,14 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.6.2] - 2026-09-29
+
+### Changed
+
+- `admin.Stage`'s documentation states what it asks of a consumer, the pool registered at stage 0,
+  and no longer names a stage for the consumer's domains to verify their statements at; the
+  consumer chooses it.
+
 ## [v0.6.1] - 2026-09-24
 
 ### Changed
@@ -208,7 +216,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.6.2...HEAD
+[v0.6.2]: https://github.com/standards-lab/go-database/compare/v0.6.1...v0.6.2
 [v0.6.1]: https://github.com/standards-lab/go-database/compare/v0.6.0...v0.6.1
 [v0.6.0]: https://github.com/standards-lab/go-database/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/standards-lab/go-database/compare/v0.4.0...v0.5.0
