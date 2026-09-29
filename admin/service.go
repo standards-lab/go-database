@@ -16,10 +16,10 @@ import (
 	"github.com/standards-lab/sqlate/query"
 )
 
-// Stage is the lifecycle stage [Service.Register] declares the schema
-// correction at: after the pool, which starts at stage 0. A consumer places
-// whatever needs the corrected schema, such as its domains verifying their
-// statements, at a later stage of its own choosing.
+// Stage is the lifecycle stage at which [Service.Register] declares the
+// schema correction: after the pool, which starts at stage 0. A consumer
+// places whatever needs the corrected schema, such as its domains verifying
+// their statements, at a later stage it chooses.
 const Stage = 1
 
 var (

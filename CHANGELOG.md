@@ -9,8 +9,8 @@ only; the `postgres` sub-module keeps its own.
 
 ### Changed
 
-- `admin.Stage`'s documentation names only what it orders against, the pool at stage 0, and no
-  longer the stage a consumer's domains verify at, which is the consumer's to choose.
+- `admin.Stage`'s documentation names only the stage it follows, the pool's stage 0. It no longer
+  names a stage for a consumer's domains to verify their statements at; the consumer chooses it.
 
 ## [v0.6.1] - 2026-09-24
 
