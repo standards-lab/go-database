@@ -35,13 +35,13 @@
 // # Startup
 //
 // [Service.Register] declares the service on a lifecycle coordinator at
-// [Stage], after the pool at stage 0. Whatever needs the corrected schema
-// runs at a later stage the consumer chooses. [Service.Start] verifies
-// every set's history; when migrations are pending, it logs them set by
-// set, applies them under the migrator's lock, and verifies again. It
-// then verifies the seeder's statements and applies the configured seed
-// set when there is one:
-// idempotent, so a deployment initializes its data at its first start and
+// [Stage]. The consumer registers the pool at stage 0, before it, and
+// whatever needs the corrected schema at a later stage it chooses.
+// [Service.Start] verifies every set's history; when migrations are
+// pending, it logs them set by set, applies them under the migrator's
+// lock, and verifies again. It then verifies the seeder's statements and
+// applies the configured seed set when there is one: idempotent, so a
+// deployment initializes its data at its first start and
 // every later start leaves it as it is. A state the mechanism cannot
 // correct — a dirty row, or a history a set does not carry — fails
 // startup. An operator resolves it through the verbs. [Service.Ready]

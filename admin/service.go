@@ -17,9 +17,10 @@ import (
 )
 
 // Stage is the lifecycle stage at which [Service.Register] declares the
-// schema correction: after the pool, which starts at stage 0. A consumer
-// places whatever needs the corrected schema, such as its domains verifying
-// their statements, at a later stage it chooses.
+// schema correction. A consumer registers the pool it hands [New] at stage
+// 0, so the pool is open before the correction runs, and places whatever
+// needs the corrected schema, such as its domains verifying their
+// statements, at a later stage it chooses.
 const Stage = 1
 
 var (
