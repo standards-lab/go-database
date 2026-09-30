@@ -214,8 +214,8 @@ func TestSets_DownBelowAnAppliedSetIsRefused(t *testing.T) {
 			bothCurrent(),
 		)...)
 	_, err := f.service.Down(context.Background(), "base", 1)
-	if !errors.Is(err, migrate.ErrAboveApplied) {
-		t.Fatalf("Down base = %v, want ErrAboveApplied", err)
+	if !errors.Is(err, migrate.ErrAboveApplied) || !errors.Is(err, admin.ErrConflict) {
+		t.Fatalf("Down base = %v, want ErrAboveApplied as ErrConflict", err)
 	}
 	for _, e := range f.rec.SQL(sqltest.OpExec) {
 		if strings.HasPrefix(e, "DROP") || strings.HasPrefix(e, "DELETE") {

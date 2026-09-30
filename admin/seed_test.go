@@ -104,15 +104,53 @@ func TestStart_AppliesTheConfiguredSet(t *testing.T) {
 }
 
 // A configured name the seeder does not declare is a configuration
-// defect: Start fails after the schema check, and nothing is seeded.
+// defect: Start fails before it reads or changes the schema.
 func TestStart_UnknownConfiguredSetFailsStartup(t *testing.T) {
-	f := newFixture(t, testDialect{}, admin.Options{Seed: "nope", Seeder: &fakeSeeder{}}, clean()...)
+	f := newFixture(t, testDialect{}, admin.Options{Seed: "nope", Seeder: &fakeSeeder{}})
 	err := f.service.Start(context.Background())
 	if !errors.Is(err, admin.ErrUnknownState) {
 		t.Fatalf("Start = %v, want ErrUnknownState", err)
 	}
-	if f.seeder.verified != 1 || len(f.seeder.seeded) != 0 {
-		t.Errorf("verified %d, seeded %v; want 1, none", f.seeder.verified, f.seeder.seeded)
+	if f.seeder.verified != 0 || len(f.seeder.seeded) != 0 || len(f.rec.Calls()) != 0 || f.service.Ready() {
+		t.Errorf("verified %d, seeded %v, calls %v, ready %v", f.seeder.verified, f.seeder.seeded, f.rec.Ops(), f.service.Ready())
+	}
+}
+
+// A startup seed that fails fails Start, and the service is not ready.
+func TestStart_SeedFailureFailsStartup(t *testing.T) {
+	f := newFixture(t, testDialect{}, admin.Options{Seed: "default", Seeder: &fakeSeeder{seedErr: errors.New("seed failed")}}, clean()...)
+	err := f.service.Start(context.Background())
+	if !errors.Is(err, f.seeder.seedErr) || !strings.HasPrefix(err.Error(), "seed: ") {
+		t.Fatalf("Start = %v, want the seed's error", err)
+	}
+	if f.service.Ready() {
+		t.Error("ready after a failed Start")
+	}
+}
+
+// Reset with no state named brings the database to the configured one,
+// and refuses when none is configured.
+func TestReset_EmptyNameUsesTheConfiguredSet(t *testing.T) {
+	responses := slices.Concat(resetting(), applying(), current())
+	f := newFixture(t, testDialect{}, admin.Options{Seed: "default", Seeder: &fakeSeeder{}}, responses...)
+	tr, err := f.service.Reset(context.Background(), "")
+	if err != nil || tr.State != "default" || !slices.Equal(f.seeder.seeded, []string{"default"}) {
+		t.Fatalf("Reset = %+v, %v; seeded %v", tr, err, f.seeder.seeded)
+	}
+
+	g := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{}})
+	if _, err := g.service.Reset(context.Background(), ""); !errors.Is(err, admin.ErrSeedDisabled) {
+		t.Errorf("Reset without a configured set = %v, want ErrSeedDisabled", err)
+	}
+}
+
+// States hands out a copy: changing it leaves the seeder's list alone.
+func TestStates_ReturnsACopy(t *testing.T) {
+	states := []string{"default", "empty"}
+	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{states: states}})
+	f.service.States()[0] = "changed"
+	if states[0] != "default" {
+		t.Errorf("seeder's states = %v, want them unchanged", states)
 	}
 }
 
@@ -163,10 +201,43 @@ func TestReset_DirtyHistoryStopsAtTheRevert(t *testing.T) {
 		t.Fatalf("Verify = %v, ready %v", err, f.service.Ready())
 	}
 	_, err := f.service.Reset(context.Background(), "default")
-	if !errors.Is(err, migrate.ErrDirty) || !strings.HasPrefix(err.Error(), "revert: ") {
+	if !errors.Is(err, migrate.ErrDirty) || !errors.Is(err, admin.ErrConflict) || !strings.HasPrefix(err.Error(), "revert: ") {
 		t.Fatalf("Reset = %v, want the revert's ErrDirty", err)
 	}
 	if len(f.seeder.seeded) != 0 || f.service.Ready() || f.rec.Pending() != 0 {
 		t.Errorf("seeded %v, ready %v, pending %d", f.seeder.seeded, f.service.Ready(), f.rec.Pending())
+	}
+}
+
+// A transition that fails at the apply seeds nothing, and the status read
+// after it finds the schema behind.
+func TestReset_FailureAtTheApply(t *testing.T) {
+	boom := errors.New("create failed")
+	responses := slices.Concat(resetting(),
+		[]sqltest.Response{locked, created, history(), {Err: boom}, unlocked},
+		[]sqltest.Response{exists(true), history()},
+	)
+	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{}}, responses...)
+	_, err := f.service.Reset(context.Background(), "default")
+	if !errors.Is(err, boom) || !strings.HasPrefix(err.Error(), "apply: ") {
+		t.Fatalf("Reset = %v, want the apply's error", err)
+	}
+	if len(f.seeder.seeded) != 0 || f.service.Ready() || f.rec.Pending() != 0 {
+		t.Errorf("seeded %v, ready %v, pending %d", f.seeder.seeded, f.service.Ready(), f.rec.Pending())
+	}
+}
+
+// A transition that fails at the seed leaves the schema applied and
+// current, and Ready reports it so.
+func TestReset_FailureAtTheSeed(t *testing.T) {
+	boom := errors.New("seed failed")
+	responses := slices.Concat(resetting(), applying(), current())
+	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{seedErr: boom}}, responses...)
+	_, err := f.service.Reset(context.Background(), "default")
+	if !errors.Is(err, boom) || !strings.HasPrefix(err.Error(), "seed: ") {
+		t.Fatalf("Reset = %v, want the seed's error", err)
+	}
+	if !f.service.Ready() || f.rec.Pending() != 0 {
+		t.Errorf("ready %v, pending %d", f.service.Ready(), f.rec.Pending())
 	}
 }

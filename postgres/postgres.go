@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -25,13 +26,22 @@ var reservedOptions = map[string]bool{
 }
 
 // New constructs the connection pool from a finalized config and wraps it
-// via [database.New]. It performs no I/O; see the package documentation for
-// the composition and its guarantees. An unfinalized config panics with the
-// fix named.
+// with [database.New], without I/O. An unfinalized config panics; a
+// reserved option or a config pgx cannot parse is an error.
 func New(cfg database.Config) (*database.DB, error) {
-	if cfg.ConnTimeout == nil {
+	if !cfg.Finalized() {
 		panic("postgres: Config not finalized: call Finalize before New")
 	}
+	connCfg, err := connConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return database.New(stdlib.OpenDB(*connCfg), cfg), nil
+}
+
+// connConfig composes the connection URL from cfg, parses it, and sets the
+// password and connect timeout on the parsed config.
+func connConfig(cfg database.Config) (*pgx.ConnConfig, error) {
 	for key := range cfg.Options {
 		if reservedOptions[key] {
 			return nil, fmt.Errorf("option %q conflicts with a connection field", key)
@@ -49,11 +59,18 @@ func New(cfg database.Config) (*database.DB, error) {
 	}
 
 	u := url.URL{
-		Scheme:   "postgres",
-		Host:     net.JoinHostPort(cfg.Host, strconv.Itoa(port)),
-		Path:     "/" + cfg.Name,
-		RawQuery: query.Encode(),
+		Scheme: "postgres",
+		Path:   "/" + cfg.Name,
 	}
+	if strings.HasPrefix(cfg.Host, "/") {
+		// A Unix-socket directory is no URL authority: pgx reads it, and
+		// the port naming the socket file, from the query.
+		query.Set("host", cfg.Host)
+		query.Set("port", strconv.Itoa(port))
+	} else {
+		u.Host = net.JoinHostPort(cfg.Host, strconv.Itoa(port))
+	}
+	u.RawQuery = query.Encode()
 
 	if cfg.User != "" {
 		u.User = url.User(cfg.User)
@@ -67,6 +84,5 @@ func New(cfg database.Config) (*database.DB, error) {
 		connCfg.Password = cfg.Password
 	}
 	connCfg.ConnectTimeout = cfg.ConnTimeout.Duration()
-
-	return database.New(stdlib.OpenDB(*connCfg), cfg), nil
+	return connCfg, nil
 }

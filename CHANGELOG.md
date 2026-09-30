@@ -7,6 +7,53 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.7.0] - 2026-09-30
+
+### Removed
+
+- **Breaking:** `admin.Register` and `admin.Stage`. The consumer declares the service on its
+  coordinator at the stage its own stage table names:
+  `lc.Add(lifecycle.Service{Name: "schema", Stage: <stage>, Start: svc.Start, Check: svc})`.
+
+### Changed
+
+- The `go-core` requirement is v0.5.0; the integer overrides use its `config.SetFromEnv`.
+- **Breaking:** `database.ErrConnectionFailed` is `sqlate.ErrConnectionFailed`, one sentinel for
+  a failure to reach the database, whether the pool or a session raised it.
+- **Breaking:** `Service.Force` refuses a version that is not one of the named set's migrations
+  with `admin.ErrValidation`, before any I/O. It returned the migrator's
+  `migrate.ErrVersionNotFound` before.
+- **Breaking:** `Service.Ready` reports the schema alone: every set's history clean and current.
+  A seeder whose statements do not prepare fails `Verify` and `Start` but no longer clears it,
+  and `Start` sets it once, when every step has passed.
+- `Service.Reset` with an empty state resets to the configured `Options.Seed` set, as
+  `Service.Seed` does. It refused with `admin.ErrSeedDisabled` before.
+- `Service.States` returns a copy of the seeder's list.
+- The `admin.Seeder` contract states that `Seed` stays idempotent when replicas seed at once.
+- Each package comment lists the package's API, and each contract is stated once, on its symbol.
+
+### Added
+
+- `admin.ErrConflict` wraps every refusal the schema's state causes (dirty, pending, a history
+  its set does not carry, a migration with no down, a set order the migrator forbids), with the
+  `migrate` sentinel kept in the chain.
+- `database.Config.Finalized` reports whether `Finalize` has filled every field `New` reads; the
+  providers check it.
+- `database.DB.ConnTimeout` returns the configured `conn_timeout`.
+- Once `Start` has succeeded, a not-ready `Service.Ready` verifies the schema itself, one probe
+  at a time, at most once per five seconds, and bounded by the pool's `conn_timeout`, so a
+  replica whose schema is corrected out of band returns to rotation. A probe's clean finding
+  yields to any operation that determined the schema while it read.
+
+### Fixed
+
+- An admin operation that failed without determining the schema's state, such as a cancelled
+  `GET` of the schema's status or a lost connection, cleared `Service.Ready`, taking the replica
+  out of rotation until another operation found the schema current. Ready now changes only on a
+  determined state.
+- A misspelled `Options.Seed` failed `Start` only after it had applied pending migrations; it
+  now fails before `Start` reads the schema.
+
 ## [v0.6.2] - 2026-09-29
 
 ### Changed
@@ -216,7 +263,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.7.0...HEAD
+[v0.7.0]: https://github.com/standards-lab/go-database/compare/v0.6.2...v0.7.0
 [v0.6.2]: https://github.com/standards-lab/go-database/compare/v0.6.1...v0.6.2
 [v0.6.1]: https://github.com/standards-lab/go-database/compare/v0.6.0...v0.6.1
 [v0.6.0]: https://github.com/standards-lab/go-database/compare/v0.5.0...v0.6.0

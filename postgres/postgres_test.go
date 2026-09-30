@@ -46,22 +46,76 @@ func TestNew_EmptyUserFallsBackToDriver(t *testing.T) {
 }
 
 func TestNew_PasswordNeverEntersTheURL(t *testing.T) {
-	cfg := database.Config{
-		Name:     "app",
-		User:     "app",
-		Password: `sp ace:sl/ash@at?q&amp'quote`,
-	}
+	password := `sp ace:sl/ash@at?q&amp'quote`
+	cfg := database.Config{Name: "app", User: "app", Password: password}
 	if err := cfg.Finalize(""); err != nil {
 		t.Fatalf("finalize config: %v", err)
 	}
 
 	// The password is set as a field on the parsed config, so characters
-	// that would break a composed URL cannot: construction succeeds.
+	// that would break a composed URL cannot, and the URL never holds it.
+	connCfg, err := postgres.ConnConfig(cfg)
+	if err != nil {
+		t.Fatalf("connConfig with a hostile password: %v", err)
+	}
+	if connCfg.Password != password {
+		t.Errorf("Password = %q, want %q", connCfg.Password, password)
+	}
+	if dsn := connCfg.ConnString(); strings.Contains(dsn, "sp ace") || strings.Contains(dsn, "quote") || strings.Contains(dsn, "password") {
+		t.Errorf("connection string %q carries the password", dsn)
+	}
+}
+
+// A host that is a path is a Unix-socket directory: it rides the query,
+// not the URL's authority, and the port names the socket file.
+func TestNew_UnixSocketHost(t *testing.T) {
+	cfg := database.Config{Name: "app", User: "app", Host: "/var/run/postgresql", Port: new(5433)}
+	if err := cfg.Finalize(""); err != nil {
+		t.Fatalf("finalize config: %v", err)
+	}
+
+	connCfg, err := postgres.ConnConfig(cfg)
+	if err != nil {
+		t.Fatalf("connConfig over a socket directory: %v", err)
+	}
+	if connCfg.Host != "/var/run/postgresql" || connCfg.Port != 5433 || connCfg.Database != "app" {
+		t.Errorf("host %q, port %d, database %q", connCfg.Host, connCfg.Port, connCfg.Database)
+	}
 	db, err := postgres.New(cfg)
 	if err != nil {
-		t.Fatalf("New with a hostile password: %v", err)
+		t.Fatalf("New over a socket directory: %v", err)
 	}
 	_ = db.Conn().Close()
+}
+
+// A TCP host keeps the host and port in the URL's authority.
+func TestNew_TCPHost(t *testing.T) {
+	cfg := database.Config{Name: "app", User: "app", Host: "db.internal"}
+	if err := cfg.Finalize(""); err != nil {
+		t.Fatalf("finalize config: %v", err)
+	}
+
+	connCfg, err := postgres.ConnConfig(cfg)
+	if err != nil {
+		t.Fatalf("connConfig: %v", err)
+	}
+	if connCfg.Host != "db.internal" || connCfg.Port != 5432 {
+		t.Errorf("host %q, port %d, want db.internal:5432", connCfg.Host, connCfg.Port)
+	}
+}
+
+// Finalized is the one check: a config missing any field New reads panics,
+// though its ConnTimeout is set.
+func TestNew_PanicsOnPartlyFinalizedConfig(t *testing.T) {
+	cfg := finalizedConfig(t)
+	cfg.MaxOpenConns = nil
+	defer func() {
+		msg, ok := recover().(string)
+		if !ok || !strings.HasPrefix(msg, "postgres:") {
+			t.Fatalf("panic = %q, want the provider's finalized-config panic", msg)
+		}
+	}()
+	_, _ = postgres.New(cfg)
 }
 
 func TestNew_RejectsReservedOptions(t *testing.T) {

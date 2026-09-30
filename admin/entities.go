@@ -5,28 +5,21 @@ import "time"
 // Seeded counts the rows a seed run inserted, by the consumer's own names.
 type Seeded map[string]int
 
-// Transition is the result of a reset to a named state: the state, the
-// schema's status after the set was applied, and the rows the state's set
-// inserted.
+// Transition is the result of a reset: the state, the schema's status, and
+// the rows seeded.
 type Transition struct {
 	State  string `json:"state"`
 	Schema Status `json:"schema"`
 	Seeded Seeded `json:"seeded"`
 }
 
-// Diagnostics is one read of the database's health:
-//
-//   - the dialect
-//   - the ping latency
-//   - the server's version, when the dialect supplies the statement
-//   - the pool's counters
-//   - the pattern namespaces the catalog registered
+// Diagnostics is one read of the database's health.
 type Diagnostics struct {
 	Dialect       string        `json:"dialect"`
-	Ping          time.Duration `json:"ping"`
-	ServerVersion string        `json:"server_version,omitempty"`
+	Ping          time.Duration `json:"ping"`                     // the ping's latency
+	ServerVersion string        `json:"server_version,omitempty"` // empty without a Versioner
 	Pool          Pool          `json:"pool"`
-	Namespaces    []string      `json:"namespaces"`
+	Namespaces    []string      `json:"namespaces"` // the catalog's pattern namespaces
 }
 
 // Pool is the connection pool's counters.
@@ -39,27 +32,19 @@ type Pool struct {
 	WaitDuration time.Duration `json:"wait_duration"`
 }
 
-// Status is the schema's state against every migration set the migrator
-// runs: whether the service reports ready (every set's history clean and
-// complete), and each set's own state in declared order, the set the
-// others build on first.
+// Status is the schema's state: Ready when every set is clean and current,
+// and each set's state in declared order.
 type Status struct {
 	Ready bool        `json:"ready"`
 	Sets  []SetStatus `json:"sets"`
 }
 
-// SetStatus is one migration set's state:
-//
-//   - its name and the history table it is recorded in
-//   - the applied head, the set's latest version, and whether the head is
-//     dirty
-//   - the versions still pending
-//   - every migration of the set, with whether it is applied
+// SetStatus is one migration set's state.
 type SetStatus struct {
 	Name       string          `json:"name"`
-	Table      string          `json:"table"`
-	Version    int             `json:"version"`
-	Latest     int             `json:"latest"`
+	Table      string          `json:"table"`   // the history table
+	Version    int             `json:"version"` // the applied head
+	Latest     int             `json:"latest"`  // the set's last migration
 	Dirty      bool            `json:"dirty"`
 	Pending    []int           `json:"pending"`
 	Migrations []MigrationInfo `json:"migrations"`
@@ -73,10 +58,8 @@ type MigrationInfo struct {
 	Applied       bool   `json:"applied"`
 }
 
-// Catalog is the pattern catalog as an operator reads it: every namespace
-// the composition root registered and every pattern under them, in
-// namespace then name order. It is build-time state; the read has no
-// write.
+// Catalog is the pattern catalog as an operator reads it, in namespace then
+// name order.
 type Catalog struct {
 	Namespaces []string  `json:"namespaces"`
 	Patterns   []Pattern `json:"patterns"`
@@ -94,9 +77,8 @@ type Pattern struct {
 	Text      string   `json:"text"`
 }
 
-// Inventory is the statements registry as an operator reads it: every
-// domain that registered its compiled statements, in the registry's order,
-// each statement as the library holds it. Build-time state; no write.
+// Inventory is the statements registry as an operator reads it, in the
+// registry's order.
 type Inventory struct {
 	Domains []DomainStatements `json:"domains"`
 }

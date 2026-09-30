@@ -7,6 +7,20 @@ changelog covers this sub-module only; the base module keeps its own.
 
 ## [Unreleased]
 
+## [v0.4.0] - 2026-09-30
+
+### Changed
+
+- **Breaking:** requires `github.com/standards-lab/go-database` v0.7.0, whose
+  `ErrConnectionFailed` is `sqlate`'s sentinel.
+- `New` checks the config with `database.Config.Finalized`, so a config missing any field the
+  base reads panics as the base's `New` does; it checked only `ConnTimeout` before.
+
+### Fixed
+
+- A `Host` that is a Unix-socket directory (starting with `/`) failed to parse, because `New`
+  joined it into the URL's authority. `New` now passes it, with the port, in the URL's query.
+
 ## [v0.3.0] - 2026-09-04
 
 ### Changed
@@ -58,7 +72,8 @@ The first release of the PostgreSQL provider, against `github.com/standards-lab/
   classifying constraint violations arrives with the write path. `postgres.Provider` types the
   selection constant.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/v0.3.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/v0.4.0...HEAD
+[v0.4.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.3.0...postgres/v0.4.0
 [v0.3.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.2.0...postgres/v0.3.0
 [v0.2.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.1.1...postgres/v0.2.0
 [v0.1.1]: https://github.com/standards-lab/go-database/compare/postgres/v0.1.0...postgres/v0.1.1

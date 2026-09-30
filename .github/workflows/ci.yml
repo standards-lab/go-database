@@ -7,8 +7,7 @@ on:
     branches: [main]
 
 # The module matrix grows with the repository: each new module is added here, to
-# the go.work use-list, and to mise GO_MODULES together. Steps are guarded on the
-# module's go.mod so a matrix entry stays green until that module lands.
+# the go.work use-list, and to mise GO_MODULES together.
 jobs:
   test:
     strategy:
@@ -29,31 +28,26 @@ jobs:
       # proxy the way a consumer does; the committed go.work would otherwise mask
       # a pin that no longer builds.
       - name: go build (GOWORK=off)
-        if: ${{ hashFiles(format('{0}/go.mod', matrix.module)) != '' }}
         working-directory: ${{ matrix.module }}
         env:
           GOWORK: "off"
         run: go build ./...
 
       - name: go vet
-        if: ${{ hashFiles(format('{0}/go.mod', matrix.module)) != '' }}
         working-directory: ${{ matrix.module }}
         run: go vet ./...
 
       - name: gofmt
-        if: ${{ hashFiles(format('{0}/go.mod', matrix.module)) != '' }}
         working-directory: ${{ matrix.module }}
         run: |
           unformatted=$(gofmt -l .)
           [ -z "$unformatted" ] || { echo "$unformatted"; exit 1; }
 
       - name: go mod tidy -diff
-        if: ${{ hashFiles(format('{0}/go.mod', matrix.module)) != '' }}
         working-directory: ${{ matrix.module }}
         run: go mod tidy -diff
 
       - name: go test -race
-        if: ${{ hashFiles(format('{0}/go.mod', matrix.module)) != '' }}
         working-directory: ${{ matrix.module }}
         run: go test -race ./...
 
@@ -69,7 +63,6 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: golangci-lint
-        if: ${{ hashFiles(format('{0}/go.mod', matrix.module)) != '' }}
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.13.2

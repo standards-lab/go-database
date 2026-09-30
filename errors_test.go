@@ -1,35 +1,43 @@
 package database_test
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"testing"
+
+	"github.com/standards-lab/sqlate"
 
 	"github.com/standards-lab/go-database"
 )
 
-func TestSentinels(t *testing.T) {
-	if got := database.ErrNotReady.Error(); got != "database not ready" {
-		t.Errorf("ErrNotReady = %q", got)
+// A connectivity failure from Start or Ping carries the sentinel, which is
+// sqlate's, and the driver's own error, each matchable through errors.Is.
+func TestErrConnectionFailed_DualWrapFromStartAndPing(t *testing.T) {
+	if database.ErrConnectionFailed != sqlate.ErrConnectionFailed {
+		t.Fatal("ErrConnectionFailed is not sqlate's sentinel")
 	}
-	if got := database.ErrConnectionFailed.Error(); got != "database connection failed" {
-		t.Errorf("ErrConnectionFailed = %q", got)
-	}
-}
 
-// The dual-wrap form is the package's error contract: errors.Is classifies by
-// sentinel while the driver's cause stays wrapped and matchable.
-func TestSentinels_DualWrap(t *testing.T) {
-	cause := errors.New("connection refused")
-	err := fmt.Errorf("%w: %w", database.ErrConnectionFailed, cause)
+	connector := &stubConnector{}
+	db := newTestDB(t, connector)
+	if err := db.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	connector.fail.Store(true)
+	pingErr := db.Ping(context.Background())
 
-	if !errors.Is(err, database.ErrConnectionFailed) {
-		t.Error("errors.Is(err, ErrConnectionFailed) = false")
-	}
-	if !errors.Is(err, cause) {
-		t.Error("errors.Is(err, cause) = false, want the cause to stay matchable")
-	}
-	if errors.Is(err, database.ErrNotReady) {
-		t.Error("errors.Is(err, ErrNotReady) = true, want the sentinels distinct")
+	failed := &stubConnector{}
+	failed.fail.Store(true)
+	startErr := newTestDB(t, failed).Start(context.Background())
+
+	for name, err := range map[string]error{"Start": startErr, "Ping": pingErr} {
+		if !errors.Is(err, database.ErrConnectionFailed) || !errors.Is(err, sqlate.ErrConnectionFailed) {
+			t.Errorf("%s = %v, want ErrConnectionFailed", name, err)
+		}
+		if !errors.Is(err, errDial) && !errors.Is(err, errPing) {
+			t.Errorf("%s = %v, want the driver's error in the chain", name, err)
+		}
+		if errors.Is(err, database.ErrNotReady) {
+			t.Errorf("%s = %v, want the sentinels distinct", name, err)
+		}
 	}
 }

@@ -19,17 +19,11 @@ const (
 	defaultConnTimeout     = 5 * time.Second
 )
 
-// Config holds the connection identity, pool sizing, and timeouts for a SQL
-// database. The numeric and duration fields are tri-state pointers: nil is
-// unset and takes the default, while an explicit zero survives the load and
-// means what it says: an unlimited pool, or no idle connections. Port has no
-// default here because the default port is a provider fact; each provider
-// supplies its own. User and Password are optional because their requiredness
-// varies by provider and auth mode; the password rides the secrets layer of
-// [config.Load] rather than a committed file. Options carries dialect-specific
-// connection keys (postgres: sslmode) passed through to the provider. Env
-// records the environment-variable names Finalize composed and read; it is
-// excluded from JSON.
+// Config holds the connection identity, pool sizing, and timeouts. Its
+// numeric and duration fields are tri-state pointers: nil takes the default,
+// and an explicit zero means what it says; a nil Port takes the provider's
+// default. Password comes from the secrets layer, never a committed file.
+// Options passes dialect-specific keys through to the provider.
 type Config struct {
 	Host            string            `json:"host"`
 	Name            string            `json:"name"`
@@ -87,10 +81,8 @@ func (c *Config) Merge(src *Config) {
 	}
 }
 
-// Finalize composes the environment override names from envPrefix (an empty
-// prefix disables overrides), applies defaults, applies the overrides, and
-// validates. Name is the one required field; a malformed override fails with
-// an error naming its variable.
+// Finalize applies defaults, then the environment overrides [NewEnv] names
+// from envPrefix (none for an empty prefix), and validates; Name is required.
 func (c *Config) Finalize(envPrefix string) error {
 	c.Env = NewEnv(envPrefix)
 	c.applyDefaults()
@@ -134,26 +126,14 @@ func (c *Config) applyEnv() error {
 	if v := os.Getenv(c.Env.Password); v != "" {
 		c.Password = v
 	}
-	if v := os.Getenv(c.Env.Port); v != "" {
-		port, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", c.Env.Port, err)
-		}
-		c.Port = &port
+	if err := config.SetFromEnv(&c.Port, c.Env.Port, strconv.Atoi); err != nil {
+		return err
 	}
-	if v := os.Getenv(c.Env.MaxOpenConns); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", c.Env.MaxOpenConns, err)
-		}
-		c.MaxOpenConns = &n
+	if err := config.SetFromEnv(&c.MaxOpenConns, c.Env.MaxOpenConns, strconv.Atoi); err != nil {
+		return err
 	}
-	if v := os.Getenv(c.Env.MaxIdleConns); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", c.Env.MaxIdleConns, err)
-		}
-		c.MaxIdleConns = &n
+	if err := config.SetFromEnv(&c.MaxIdleConns, c.Env.MaxIdleConns, strconv.Atoi); err != nil {
+		return err
 	}
 	if err := config.SetDurationFromEnv(&c.ConnMaxLifetime, c.Env.ConnMaxLifetime); err != nil {
 		return err
@@ -195,7 +175,8 @@ func (c *Config) validate() error {
 	return nil
 }
 
-func (c *Config) finalized() bool {
+// Finalized reports whether Finalize has filled every field [New] reads.
+func (c *Config) Finalized() bool {
 	return c.MaxOpenConns != nil &&
 		c.MaxIdleConns != nil &&
 		c.ConnMaxLifetime != nil &&
