@@ -4,7 +4,7 @@ go 1.27
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/standards-lab/go-database v0.4.0
+	github.com/standards-lab/go-database v0.7.0
 )
 
 require (
@@ -16,7 +16,3 @@ require (
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/text v0.39.0 // indirect
 )
-
-// Transient: builds against the unreleased base (Config.Finalized); the
-// release pins the new base and removes this.
-replace github.com/standards-lab/go-database => ../
