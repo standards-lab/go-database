@@ -7,8 +7,7 @@ on:
     branches: [main]
 
 # The module matrix grows with the repository: each new module is added here, to
-# the go.work use-list, and to mise GO_MODULES together. Steps are guarded on the
-# module's go.mod so a matrix entry stays green until that module lands.
+# the go.work use-list, and to mise GO_MODULES together.
 jobs:
   test:
     strategy:

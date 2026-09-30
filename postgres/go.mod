@@ -12,6 +12,11 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/standards-lab/go-core v0.3.0 // indirect
+	github.com/standards-lab/sqlate v0.4.1 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/text v0.39.0 // indirect
 )
+
+// Transient: builds against the unreleased base (Config.Finalized); the
+// release pins the new base and removes this.
+replace github.com/standards-lab/go-database => ../

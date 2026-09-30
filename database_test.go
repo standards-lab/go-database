@@ -19,9 +19,16 @@ type stubConnector struct {
 	fail atomic.Bool
 }
 
+// errDial and errPing are the stub's driver errors, so a test can match the
+// cause a failure wraps.
+var (
+	errDial = errors.New("dial refused")
+	errPing = errors.New("ping refused")
+)
+
 func (c *stubConnector) Connect(context.Context) (driver.Conn, error) {
 	if c.fail.Load() {
-		return nil, errors.New("dial refused")
+		return nil, errDial
 	}
 	return stubConn{connector: c}, nil
 }
@@ -50,7 +57,7 @@ func (stubConn) Begin() (driver.Tx, error) {
 
 func (s stubConn) Ping(context.Context) error {
 	if s.connector.fail.Load() {
-		return errors.New("ping refused")
+		return errPing
 	}
 	return nil
 }

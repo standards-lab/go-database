@@ -25,7 +25,6 @@ is added when it is about to be built.
   `sqlate/postgres`'s. Built.
 
 `sqlate` (`github.com/standards-lab/sqlate`), a standalone library below this one, owns
-statements, sessions, transactions, the dialect, migrations, and the scripted test driver, as
-the `database` package comment states. The HTTP half of the admin service — the route group and
-handler — is application code: the reference service builds it, and the template stays
-engine-free.
+statements, sessions, transactions, the dialect, migrations, and the scripted test driver. The
+HTTP half of the admin service — the route group and handler — is application code: the
+reference service builds it, and the template stays engine-free.

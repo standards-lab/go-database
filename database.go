@@ -8,24 +8,17 @@ import (
 	"time"
 )
 
-// DB wraps a provider-constructed connection pool with lifecycle integration.
-// It owns one pool for the process: construction performs no I/O, Start
-// establishes connectivity, and Ready reports it live. Start and Shutdown
-// carry the lifecycle hook signature, so the composition root registers the
-// bare method values, and Ready satisfies lifecycle.ReadinessChecker
-// structurally; the package registers no hooks of its own.
+// DB is a provider-constructed connection pool with lifecycle hooks.
 type DB struct {
 	conn        *sql.DB
 	connTimeout time.Duration
 	started     atomic.Bool
 }
 
-// New wraps a provider-constructed pool and applies cfg's pool settings, the
-// half of construction every provider shares. It panics if cfg was not
-// finalized or on a nil conn: each is a wiring defect at the composition
-// root, not a runtime condition.
+// New wraps a provider-constructed pool and applies cfg's pool settings. It
+// panics on an unfinalized cfg or a nil conn.
 func New(conn *sql.DB, cfg Config) *DB {
-	if !cfg.finalized() {
+	if !cfg.Finalized() {
 		panic("database: Config not finalized: call Finalize before New")
 	}
 	if conn == nil {
@@ -42,17 +35,19 @@ func New(conn *sql.DB, cfg Config) *DB {
 	}
 }
 
-// Conn returns the underlying connection pool. The SQL layer wraps it
-// (sqlate.Wrap with the engine's dialect) and the admin service reads its
-// statistics; nothing in this package runs statements on it.
+// Conn returns the underlying connection pool.
 func (d *DB) Conn() *sql.DB {
 	return d.conn
 }
 
-// Start establishes connectivity with a ping bounded by the configured
-// conn_timeout and marks the database started. A failure wraps
-// [ErrConnectionFailed] around the driver's error. There is no started guard:
-// a repeat Start just pings again.
+// ConnTimeout returns the configured conn_timeout, the bound Start and Ready
+// apply to a ping.
+func (d *DB) ConnTimeout() time.Duration {
+	return d.connTimeout
+}
+
+// Start pings the database, bounded by conn_timeout, and marks it started; a
+// failure wraps [ErrConnectionFailed] around the driver's error.
 func (d *DB) Start(ctx context.Context) error {
 	pingCtx, cancel := context.WithTimeout(ctx, d.connTimeout)
 	defer cancel()
@@ -63,20 +58,15 @@ func (d *DB) Start(ctx context.Context) error {
 	return nil
 }
 
-// Shutdown clears readiness and closes the pool, returning the close error.
-// Closing a pool that never connected is a clean no-op, so the
-// drain-after-failed-startup path is safe. The context exists for the
-// lifecycle hook signature; sql.DB.Close is synchronous.
+// Shutdown clears readiness and closes the pool, returning the close error;
+// closing a pool that never connected is a no-op.
 func (d *DB) Shutdown(ctx context.Context) error {
 	d.started.Store(false)
 	return d.conn.Close()
 }
 
-// Ready reports live connectivity: false before Start or after Shutdown, and
-// otherwise the result of a ping bounded by the configured conn_timeout. The
-// probe reflects the database's current state: readiness drops during an
-// outage and recovers when the database does, at the cost of one bounded
-// round trip per call.
+// Ready reports whether Start succeeded and a ping bounded by conn_timeout
+// succeeds now.
 func (d *DB) Ready() bool {
 	if !d.started.Load() {
 		return false
@@ -86,9 +76,8 @@ func (d *DB) Ready() bool {
 	return d.conn.PingContext(ctx) == nil
 }
 
-// Ping verifies connectivity under the caller's context: [ErrNotReady] before
-// Start or after Shutdown, and otherwise a ping whose failure wraps
-// [ErrConnectionFailed]. Unlike [DB.Ready] it applies no timeout of its own.
+// Ping pings the database under the caller's context: [ErrNotReady] before
+// Start or after Shutdown, and a failure wraps [ErrConnectionFailed].
 func (d *DB) Ping(ctx context.Context) error {
 	if !d.started.Load() {
 		return ErrNotReady

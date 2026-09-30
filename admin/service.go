@@ -9,44 +9,41 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/standards-lab/go-core/lifecycle"
 	"github.com/standards-lab/go-database"
 	"github.com/standards-lab/sqlate"
 	"github.com/standards-lab/sqlate/migrate"
 	"github.com/standards-lab/sqlate/query"
 )
 
-// Stage is the lifecycle stage at which [Service.Register] declares the
-// schema correction. A consumer registers the pool it hands [New] at stage
-// 0, so the pool is open before the correction runs, and places whatever
-// needs the corrected schema, such as its domains verifying their
-// statements, at a later stage it chooses.
-const Stage = 1
+// reverifyInterval is the least time between two of Ready's own schema
+// verifications.
+const reverifyInterval = 5 * time.Second
 
 var (
-	// ErrSeedDisabled reports a seed request the service cannot serve: no
-	// seeder is wired, or the request names no set and the options
-	// configure none.
+	// ErrSeedDisabled reports a seed request with no seeder wired, or with
+	// no set named or configured.
 	ErrSeedDisabled = errors.New("seeding is disabled")
 
-	// ErrValidation classifies a rejected administrative request: a verb
-	// argument outside its domain, refused before any I/O.
+	// ErrValidation reports a verb argument outside its domain.
 	ErrValidation = errors.New("validation failed")
 
-	// ErrUnknownState reports a state name the seeder does not declare,
-	// refused before any I/O.
+	// ErrUnknownState reports a state name the seeder does not declare.
 	ErrUnknownState = errors.New("unknown state")
 
-	// ErrUnknownSet reports a verb that names no migration set, or one the
-	// migrator does not run, refused before any I/O.
+	// ErrUnknownSet reports a set name the migrator does not run.
 	ErrUnknownSet = errors.New("unknown migration set")
+
+	// ErrConflict reports an operation the schema's state refuses: a dirty
+	// or pending set, a history its set does not carry, a migration with no
+	// down, or a set order the migrator forbids. The migrate sentinel stays
+	// in the chain.
+	ErrConflict = errors.New("schema conflict")
 )
 
-// Seeder is the consumer's seed mechanism over its named sets. A set is
-// the data a deployment or a scenario starts from, declared by the
-// consumer under a state name. Verify prepares the seeder's statements
-// against the schema; States lists the declared names, sorted, without
-// I/O; Seed applies one set idempotently and counts what it inserted.
+// Seeder is the consumer's seed mechanism over its named sets. Verify
+// prepares its statements against the schema; States lists the declared
+// names, sorted; Seed applies one set idempotently, even when replicas seed
+// it concurrently, and counts what it inserted.
 type Seeder interface {
 	Verify(ctx context.Context) error
 	States() []string
@@ -65,26 +62,20 @@ type Registry interface {
 	Registry() []Entry
 }
 
-// Versioner is the optional dialect capability that supplies the statement
-// reading the server's version: one row, one text column. Diagnose asserts
-// it off the session's dialect and omits the version when it is absent.
+// Versioner is the optional dialect capability supplying the statement that
+// reads the server's version: one row, one text column.
 type Versioner interface {
 	ServerVersion() string
 }
 
-// Options holds the collaborators and switches the composition root
-// chooses.
+// Options holds the optional collaborators and the startup seed set.
 type Options struct {
-	// Seed names the state whose set applies at every startup, once the
-	// schema is current, and on a seed request that names no set: the way
-	// a deployment initializes its data. Empty applies none at startup. A
-	// name without a Seeder is a wiring defect; a name the seeder does not
-	// declare is a configuration defect that fails startup.
+	// Seed names the state whose set Start applies and a seed or reset
+	// naming no state uses. Empty applies none at startup; a name the
+	// seeder does not declare fails Start before it reads the schema.
 	Seed string
 
-	// Seeder is the consumer's seed mechanism. nil means the consumer has
-	// no sets: Start verifies no seed statements, and Seed and Reset
-	// refuse.
+	// Seeder is the consumer's seed mechanism; nil refuses Seed and Reset.
 	Seeder Seeder
 
 	// Registry is the consumer's statements registry. nil means Statements
@@ -95,10 +86,7 @@ type Options struct {
 	Logger *slog.Logger
 }
 
-// Service is the database admin service. Every operation is a trigger over
-// the migrator, the session, the seeder, or the catalog; Start runs the
-// same functions the on-demand verbs do. Ready reports a clean, complete
-// schema and follows every operation.
+// Service is the database admin service.
 type Service struct {
 	pool     *database.DB
 	db       *sqlate.DB
@@ -109,17 +97,11 @@ type Service struct {
 	logger   *slog.Logger
 	seed     string
 	ready    atomic.Bool
+	started  atomic.Bool
+	verified atomic.Int64 // unix nanoseconds of Ready's last verification
 }
 
-// New builds the service over its four collaborators:
-//
-//   - pool, the lifecycle object it administers
-//   - db, the sqlate session over the same pool
-//   - m, the migrator the consumer built over its migration sets
-//   - c, the catalog every statement compiles against
-//
-// A nil pool, db, m, or c panics, as does an opts.Seed name without
-// opts.Seeder: each is a wiring defect at the composition root.
+// New builds the service over the pool, its sqlate session, a migrator, and a catalog.
 func New(pool *database.DB, db *sqlate.DB, m *migrate.Migrator, c *query.Catalog, opts Options) *Service {
 	switch {
 	case pool == nil:
@@ -143,61 +125,69 @@ func New(pool *database.DB, db *sqlate.DB, m *migrate.Migrator, c *query.Catalog
 	}
 }
 
-// Register declares the schema stage on lc: Start corrects the schema and
-// Ready gates readiness on it.
-func (s *Service) Register(lc *lifecycle.Coordinator) {
-	lc.Add(lifecycle.Service{
-		Name:  "schema",
-		Stage: Stage,
-		Start: s.Start,
-		Check: s,
-	})
+// Ready reports whether every set's history is clean and current. Once
+// Start has succeeded, a not-ready service verifies the schema itself, at
+// most once per five seconds and bounded by the pool's conn_timeout.
+func (s *Service) Ready() bool {
+	if s.ready.Load() || !s.started.Load() {
+		return s.ready.Load()
+	}
+	now := time.Now().UnixNano()
+	last := s.verified.Load()
+	if last != 0 && now-last < int64(reverifyInterval) {
+		return false
+	}
+	if !s.verified.CompareAndSwap(last, now) {
+		return false // another probe is verifying
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), s.pool.ConnTimeout())
+	defer cancel()
+	if s.migrator.Verify(ctx) == nil {
+		s.ready.Store(true)
+	}
+	return s.ready.Load()
 }
 
-// Ready reports whether every set's history is its clean head, as of the
-// last operation.
-func (s *Service) Ready() bool { return s.ready.Load() }
-
-// Start brings every set to its head: pending migrations are logged set by
-// set, then applied under the migrator's lock; a clean, complete history
-// passes. A state the mechanism cannot correct — a dirty row, or a history
-// a set does not carry — fails startup. An operator resolves it through the
-// verbs (force the named set, then up) on a process started against a
-// corrected database, or from another replica.
-// The seeder's statements are then verified against the schema, and the
-// configured seed set, when there is one, is applied.
+// Start refuses an undeclared Options.Seed, brings every set to its head
+// (logging the pending migrations first), verifies the seeder's statements,
+// and applies the configured seed set; the service is ready once all pass.
 func (s *Service) Start(ctx context.Context) error {
+	if s.seed != "" {
+		if err := s.checkState(s.seed); err != nil {
+			return err
+		}
+	}
 	err := s.migrator.Verify(ctx)
 	if errors.Is(err, migrate.ErrPending) {
 		if err := s.logPending(ctx); err != nil {
 			return err
 		}
 		if err := s.migrator.Up(ctx); err != nil {
-			return fmt.Errorf("apply: %w", err)
+			return fmt.Errorf("apply: %w", conflict(err))
 		}
 		err = s.migrator.Verify(ctx)
 	}
 	if err != nil {
-		return err // the lifecycle prefixes the service name
+		return conflict(err) // the lifecycle prefixes the service name
 	}
-	s.ready.Store(true)
 	// A clean, complete history puts every set at its latest version.
 	for _, l := range s.migrator.Layers() {
 		s.logger.InfoContext(ctx, "schema current", "set", l.Name(), "version", latest(l.Migrations()))
 	}
 	if s.seeder != nil {
 		if err := s.seeder.Verify(ctx); err != nil {
-			s.ready.Store(false)
 			return err
 		}
 	}
 	if s.seed != "" {
-		n, err := s.Seed(ctx, "")
+		n, err := s.seeder.Seed(ctx, s.seed)
 		if err != nil {
 			return fmt.Errorf("seed: %w", err)
 		}
 		s.logger.InfoContext(ctx, "seeded", "state", s.seed, "rows", n)
 	}
+	s.ready.Store(true)
+	s.started.Store(true)
 	return nil
 }
 
@@ -207,7 +197,7 @@ func (s *Service) Start(ctx context.Context) error {
 func (s *Service) logPending(ctx context.Context) error {
 	sets, err := s.migrator.Status(ctx)
 	if err != nil {
-		return err
+		return conflict(err)
 	}
 	for _, st := range sets {
 		if st.Dirty {
@@ -222,57 +212,47 @@ func (s *Service) logPending(ctx context.Context) error {
 	return nil
 }
 
-// States lists the state names the seeder declares, sorted; no seeder
-// declares none. No I/O.
+// States lists the state names the seeder declares, sorted.
 func (s *Service) States() []string {
 	if s.seeder == nil {
 		return []string{}
 	}
-	if states := s.seeder.States(); states != nil {
+	if states := slices.Clone(s.seeder.States()); states != nil {
 		return states
 	}
 	return []string{}
 }
 
-// Seed applies the named set idempotently over the schema as it stands,
-// or the configured set when state is empty. Without a seeder, or with no
-// set named or configured, the request is refused with [ErrSeedDisabled];
-// a name the seeder does not declare is refused with [ErrUnknownState];
-// both before any I/O.
+// Seed applies the named set, or the configured one when state is empty,
+// over the schema as it stands.
 func (s *Service) Seed(ctx context.Context, state string) (Seeded, error) {
-	if state == "" {
-		state = s.seed
-	}
-	if err := s.checkState(state); err != nil {
+	state, err := s.state(state)
+	if err != nil {
 		return nil, err
 	}
 	return s.seeder.Seed(ctx, state)
 }
 
-// Reset brings the database to the named state: every migration set is
-// reverted, the last declared first, with its history table dropped; every
-// set is applied again in declared order; and the state's seed set is
-// applied, each through the same function the verbs and Start run. The
-// revert and the apply each hold the migrator's lock; the seed runs outside
-// it, as Seed does. The request is refused before any I/O the way Seed
-// refuses; a failure at any step leaves the schema where that step stopped,
-// and the status is still read so Ready reflects it.
+// Reset reverts every set, applies every set, and applies the named state's
+// seed set, or the configured one when state is empty. A failure leaves the
+// schema where its step stopped.
 func (s *Service) Reset(ctx context.Context, state string) (Transition, error) {
-	if err := s.checkState(state); err != nil {
+	state, err := s.state(state)
+	if err != nil {
 		return Transition{}, err
 	}
 	if err := s.migrator.Reset(ctx); err != nil {
-		_, _ = s.Status(ctx)
-		return Transition{}, fmt.Errorf("revert: %w", err)
+		_, err = s.after(ctx, fmt.Errorf("revert: %w", conflict(err)))
+		return Transition{}, err
 	}
 	if err := s.migrator.Up(ctx); err != nil {
-		_, _ = s.Status(ctx)
-		return Transition{}, fmt.Errorf("apply: %w", err)
+		_, err = s.after(ctx, fmt.Errorf("apply: %w", conflict(err)))
+		return Transition{}, err
 	}
 	n, err := s.seeder.Seed(ctx, state)
 	if err != nil {
-		_, _ = s.Status(ctx)
-		return Transition{}, fmt.Errorf("seed: %w", err)
+		_, err = s.after(ctx, fmt.Errorf("seed: %w", err))
+		return Transition{}, err
 	}
 	st, err := s.Status(ctx)
 	if err != nil {
@@ -282,9 +262,17 @@ func (s *Service) Reset(ctx context.Context, state string) (Transition, error) {
 	return Transition{State: state, Schema: st, Seeded: n}, nil
 }
 
-// checkState is the refusal every seed operation applies before I/O: no
-// seeder or no name is [ErrSeedDisabled], an undeclared name is
-// [ErrUnknownState].
+// state resolves a seed operation's state name, the configured one when it
+// is empty, and refuses it before any I/O: no seeder or no name is
+// [ErrSeedDisabled], an undeclared name [ErrUnknownState].
+func (s *Service) state(state string) (string, error) {
+	if state == "" {
+		state = s.seed
+	}
+	return state, s.checkState(state)
+}
+
+// checkState is the refusal every seed operation applies before I/O.
 func (s *Service) checkState(state string) error {
 	if s.seeder == nil || state == "" {
 		return ErrSeedDisabled
@@ -295,27 +283,27 @@ func (s *Service) checkState(state string) error {
 	return nil
 }
 
-// Verify checks that every set's history is its clean head and, when it
-// is, that the seeder's statements prepare against the schema; the error
-// names the set or statement that is wrong. Ready follows the result.
+// Verify checks that every set's history is clean and current and, when it
+// is, that the seeder's statements prepare; the error names the set or
+// statement at fault.
 func (s *Service) Verify(ctx context.Context) error {
 	err := s.migrator.Verify(ctx)
-	if err == nil && s.seeder != nil {
-		err = s.seeder.Verify(ctx)
+	s.settle(err)
+	if err != nil {
+		return conflict(err)
 	}
-	s.ready.Store(err == nil)
-	return err
+	if s.seeder != nil {
+		return s.seeder.Verify(ctx)
+	}
+	return nil
 }
 
-// Status reads every set's state, in declared order, and refreshes Ready
-// from it: ready when no set is dirty or pending. A history that cannot be
-// read, or that carries a row its set does not, is an error, and Ready is
-// cleared: the service cannot claim a clean schema it cannot account for.
+// Status reads every set's state in declared order.
 func (s *Service) Status(ctx context.Context) (Status, error) {
 	sets, err := s.migrator.Status(ctx)
 	if err != nil {
-		s.ready.Store(false)
-		return Status{}, err
+		s.settle(err)
+		return Status{}, conflict(err)
 	}
 	st := Status{Ready: true, Sets: make([]SetStatus, 0, len(sets))}
 	for i, l := range s.migrator.Layers() {
@@ -339,14 +327,13 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 	return st, nil
 }
 
-// Up applies every pending migration of every set, in declared order, and
-// returns the resulting state.
+// Up applies every pending migration of every set, in declared order.
 func (s *Service) Up(ctx context.Context) (Status, error) {
 	return s.after(ctx, s.migrator.Up(ctx))
 }
 
 // Down reverts the named set's n most recent migrations; n must be
-// positive. A set above it with applied migrations refuses the revert.
+// positive.
 func (s *Service) Down(ctx context.Context, set string, n int) (Status, error) {
 	l, err := s.layer(set)
 	if err != nil {
@@ -360,8 +347,7 @@ func (s *Service) Down(ctx context.Context, set string, n int) (Status, error) {
 
 // Steps applies the named set's next n pending migrations when n is
 // positive, or reverts its last -n applied ones when it is negative; zero
-// is rejected. A set below it with pending migrations refuses an apply, and
-// a set above it with applied ones refuses a revert.
+// is rejected.
 func (s *Service) Steps(ctx context.Context, set string, n int) (Status, error) {
 	l, err := s.layer(set)
 	if err != nil {
@@ -373,47 +359,69 @@ func (s *Service) Steps(ctx context.Context, set string, n int) (Status, error) 
 	return s.after(ctx, l.Steps(ctx, n))
 }
 
-// Force sets the named set's history to version, clearing its dirty state;
-// 0 empties it. It never touches the schema and checks no set's history
-// first: it repairs a dirty set once the operator has fixed the failed
-// migration's objects by hand, and Up follows it. It can just as well
-// manufacture a dirty state, since a forced-down history re-applies files
-// against objects that still exist.
+// Force sets the named set's history to version, one of its migrations or
+// 0 for none, and clears its dirty mark. It touches no schema and checks no
+// history first.
 func (s *Service) Force(ctx context.Context, set string, version int) (Status, error) {
 	l, err := s.layer(set)
 	if err != nil {
 		return Status{}, err
 	}
-	if version < 0 {
-		return Status{}, fmt.Errorf("%w: version must not be negative", ErrValidation)
+	if version != 0 && !slices.ContainsFunc(l.Migrations(), func(m migrate.Migration) bool { return m.Version == version }) {
+		return Status{}, fmt.Errorf("%w: version %d is not in set %q", ErrValidation, version, set)
 	}
 	return s.after(ctx, l.Force(ctx, version))
 }
 
-// layer resolves a verb's set name, refusing an empty or undeclared one
-// with [ErrUnknownSet] before any I/O.
+// layer resolves a verb's set name, refusing an undeclared one with
+// [ErrUnknownSet] before any I/O.
 func (s *Service) layer(set string) (migrate.Layer, error) {
 	l, ok := s.migrator.Layer(set)
-	if set == "" || !ok {
+	if !ok {
 		return migrate.Layer{}, fmt.Errorf("%w: %q", ErrUnknownSet, set)
 	}
 	return l, nil
 }
 
 // after returns the state following a mutating operation, or the
-// operation's error. On an error the status is still read, so Ready
-// reflects the schema the operation left behind.
+// operation's error once the status is read, so Ready follows the schema
+// the operation left behind.
 func (s *Service) after(ctx context.Context, err error) (Status, error) {
 	if err != nil {
 		_, _ = s.Status(ctx)
-		return Status{}, err
+		return Status{}, conflict(err)
 	}
 	return s.Status(ctx)
 }
 
-// Catalog reads the pattern catalog: every namespace and every pattern, so
-// an operator sees a pattern's text, tier, and slots as the library holds
-// them. No I/O.
+// settle records a determined schema state in the ready flag: true on a
+// clean, current schema, false on a dirty, pending, or unrecognized one.
+// Any other error, such as a cancelled context or a lost connection,
+// determines nothing and leaves the flag.
+func (s *Service) settle(err error) {
+	switch {
+	case err == nil:
+		s.ready.Store(true)
+	case errors.Is(err, migrate.ErrDirty), errors.Is(err, migrate.ErrPending), errors.Is(err, migrate.ErrUnknownVersion):
+		s.ready.Store(false)
+	}
+}
+
+// conflict wraps [ErrConflict] around a refusal the schema's state causes,
+// once.
+func conflict(err error) error {
+	switch {
+	case err == nil, errors.Is(err, ErrConflict):
+		return err
+	case errors.Is(err, migrate.ErrDirty), errors.Is(err, migrate.ErrPending),
+		errors.Is(err, migrate.ErrUnknownVersion), errors.Is(err, migrate.ErrNoDown),
+		errors.Is(err, migrate.ErrAboveApplied), errors.Is(err, migrate.ErrBelowPending):
+		return fmt.Errorf("%w: %w", ErrConflict, err)
+	}
+	return err
+}
+
+// Catalog reads the pattern catalog: every namespace and every pattern.
 func (s *Service) Catalog() Catalog {
 	c := Catalog{Namespaces: s.catalog.Namespaces(), Patterns: []Pattern{}}
 	for _, p := range s.catalog.Patterns() {
@@ -429,8 +437,7 @@ func (s *Service) Catalog() Catalog {
 }
 
 // Statements reads the statements registry: every domain's compiled
-// inventory, the counterpart of Catalog for authored files. No I/O; no
-// registry reports no domains.
+// inventory.
 func (s *Service) Statements() Inventory {
 	inv := Inventory{Domains: []DomainStatements{}}
 	if s.registry == nil {
@@ -456,9 +463,8 @@ func (s *Service) Statements() Inventory {
 	return inv
 }
 
-// Diagnose reads the database's health: the dialect, a timed ping through
-// the pool's lifecycle object, the server's version when the dialect
-// supplies the statement, and the pool's counters.
+// Diagnose reads the database's health: a timed ping, the server's version
+// when the dialect is a [Versioner], and the pool's counters.
 func (s *Service) Diagnose(ctx context.Context) (Diagnostics, error) {
 	d := Diagnostics{Dialect: s.db.Dialect().Name(), Namespaces: s.catalog.Namespaces()}
 	start := time.Now()

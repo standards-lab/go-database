@@ -2,12 +2,7 @@ package database
 
 import "github.com/standards-lab/go-core/config"
 
-// Env names the environment variables [Config.Finalize] reads, composed from
-// the prefix it receives under the "database" segment: DATABASE_HOST,
-// DATABASE_PORT, and the rest, prefixed by whatever [config.EnvName]
-// produces. An empty name disables that one override, and the zero Env (an
-// empty prefix) disables all of them. Populated by Finalize and exposed for
-// introspection.
+// Env holds the environment-variable names [Config.Finalize] read.
 type Env struct {
 	Host            string
 	Name            string
@@ -21,10 +16,7 @@ type Env struct {
 	ConnTimeout     string
 }
 
-// NewEnv composes the standard override names from a prefix under the
-// "database" segment: DATABASE_HOST, DATABASE_PORT, and the rest, prefixed by
-// whatever [config.EnvName] produces. An empty prefix returns the zero Env,
-// disabling the overrides.
+// NewEnv composes the override names under prefix, such as PREFIX_DATABASE_HOST.
 func NewEnv(prefix string) Env {
 	if prefix == "" {
 		return Env{}

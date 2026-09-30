@@ -1,6 +1,7 @@
 package database_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,58 @@ func TestConfig_MergeOverlaysSetFields(t *testing.T) {
 	}
 	if base.User != "app" {
 		t.Errorf("User = %s, want app", base.User)
+	}
+}
+
+// Every field an overlay sets replaces the base's.
+func TestConfig_MergeOverlaysEveryField(t *testing.T) {
+	base := database.Config{
+		Host: "a", Name: "a", User: "a", Password: "a", Port: new(1),
+		MaxOpenConns: new(1), MaxIdleConns: new(1),
+		ConnMaxLifetime: new(config.Duration(time.Second)),
+		ConnMaxIdleTime: new(config.Duration(time.Second)),
+		ConnTimeout:     new(config.Duration(time.Second)),
+		Options:         map[string]string{"k": "a"},
+	}
+	overlay := database.Config{
+		Host: "b", Name: "b", User: "b", Password: "b", Port: new(2),
+		MaxOpenConns: new(2), MaxIdleConns: new(0),
+		ConnMaxLifetime: new(config.Duration(2 * time.Second)),
+		ConnMaxIdleTime: new(config.Duration(0)),
+		ConnTimeout:     new(config.Duration(2 * time.Second)),
+		Options:         map[string]string{"k": "b"},
+	}
+
+	base.Merge(&overlay)
+
+	want := database.Config{
+		Host: "b", Name: "b", User: "b", Password: "b", Port: new(2),
+		MaxOpenConns: new(2), MaxIdleConns: new(0),
+		ConnMaxLifetime: new(config.Duration(2 * time.Second)),
+		ConnMaxIdleTime: new(config.Duration(0)),
+		ConnTimeout:     new(config.Duration(2 * time.Second)),
+		Options:         map[string]string{"k": "b"},
+	}
+	if !reflect.DeepEqual(base, want) {
+		t.Errorf("merged = %+v\nwant %+v", base, want)
+	}
+}
+
+// Finalized reports whether Finalize has filled every pointer New reads.
+func TestConfig_Finalized(t *testing.T) {
+	cfg := validConfig()
+	if cfg.Finalized() {
+		t.Error("Finalized() = true before Finalize")
+	}
+	cfg.ConnTimeout = new(config.Duration(time.Second))
+	if cfg.Finalized() {
+		t.Error("Finalized() = true with only ConnTimeout set")
+	}
+	if err := cfg.Finalize(""); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	if !cfg.Finalized() {
+		t.Error("Finalized() = false after Finalize")
 	}
 }
 

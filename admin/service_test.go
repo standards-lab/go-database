@@ -123,6 +123,7 @@ func (testDialect) ServerVersion() string { return "SELECT version()" }
 // records the names it was asked to seed, and answers with a fixed count.
 type fakeSeeder struct {
 	verifyErr error
+	seedErr   error
 	states    []string
 	verified  int
 	seeded    []string
@@ -139,8 +140,14 @@ func (f *fakeSeeder) States() []string {
 
 func (f *fakeSeeder) Seed(_ context.Context, state string) (admin.Seeded, error) {
 	f.seeded = append(f.seeded, state)
+	if f.seedErr != nil {
+		return nil, f.seedErr
+	}
 	return admin.Seeded{"things": 2}, nil
 }
+
+// The service is the schema stage's readiness check.
+var _ lifecycle.ReadinessChecker = (*admin.Service)(nil)
 
 // fakeRegistry is one domain's compiled statements.
 type fakeRegistry []admin.Entry
@@ -299,16 +306,6 @@ func TestStart_SeederVerifyFailureClearsReady(t *testing.T) {
 	}
 }
 
-func TestRegister_DeclaresTheSchemaStage(t *testing.T) {
-	s, _ := newService(t)
-	lc := lifecycle.New()
-	s.Register(lc)
-	checks := lc.Checks()
-	if len(checks) != 1 || checks[0].Name != "schema" || checks[0].Checker != s {
-		t.Errorf("checks = %+v, want the service under \"schema\"", checks)
-	}
-}
-
 // Status reads the set's head, latest version, and pending versions,
 // marks each migration, and refreshes Ready.
 func TestStatus_ReportsHeadAndPending(t *testing.T) {
@@ -384,13 +381,187 @@ func TestUp_ReturnsRefreshedStatus(t *testing.T) {
 	}
 }
 
-// Force outside the set is the migrator's error, and the status is still
-// read so Ready reflects the schema.
-func TestForce_OutsideTheSetIsTheMigratorsError(t *testing.T) {
-	s, _ := newService(t)
-	_, err := s.Force(context.Background(), "app", 9)
-	if !errors.Is(err, migrate.ErrVersionNotFound) {
-		t.Errorf("Force 9 = %v, want ErrVersionNotFound", err)
+// Force to a version outside the set is refused before any I/O, and Ready
+// is left as the last operation found it.
+func TestForce_OutsideTheSetIsRefusedBeforeIO(t *testing.T) {
+	s, rec := newService(t, clean()...)
+	ctx := context.Background()
+	if err := s.Verify(ctx); err != nil || !s.Ready() {
+		t.Fatalf("Verify = %v, ready %v", err, s.Ready())
+	}
+	calls := len(rec.Calls())
+	_, err := s.Force(ctx, "app", 9)
+	if !errors.Is(err, admin.ErrValidation) || !strings.Contains(err.Error(), "9") {
+		t.Errorf("Force 9 = %v, want ErrValidation naming the version", err)
+	}
+	if len(rec.Calls()) != calls || !s.Ready() {
+		t.Errorf("calls %d -> %d, ready %v", calls, len(rec.Calls()), s.Ready())
+	}
+}
+
+// Steps applies the next pending migration and reverts the last applied
+// one, each answering with the refreshed status.
+func TestSteps_AppliesAndReverts(t *testing.T) {
+	one := history([]driver.Value{int64(1), "a", false})
+	s, rec := newService(t,
+		// Steps +1 over an empty database: app 1 up, insert.
+		locked, created, history(), sqltest.Response{}, sqltest.Response{}, unlocked,
+		exists(true), one,
+		// Steps -1 over the whole set: app 2 dirty, down, delete.
+		locked, created, applied(), sqltest.Response{}, sqltest.Response{}, sqltest.Response{}, unlocked,
+		exists(true), one,
+	)
+	ctx := context.Background()
+	st, err := s.Steps(ctx, "app", 1)
+	if err != nil || st.Sets[0].Version != 1 || !slices.Equal(st.Sets[0].Pending, []int{2}) {
+		t.Fatalf("Steps +1 = %+v, %v", st, err)
+	}
+	st, err = s.Steps(ctx, "app", -1)
+	if err != nil || st.Sets[0].Version != 1 || st.Ready || s.Ready() {
+		t.Fatalf("Steps -1 = %+v, %v; ready %v", st, err, s.Ready())
+	}
+	if execs := rec.SQL(sqltest.OpExec); !slices.Contains(execs, "CREATE TABLE a (x int)") || !slices.Contains(execs, "DROP INDEX CONCURRENTLY ix") {
+		t.Errorf("execs = %q", execs)
+	}
+	if rec.Pending() != 0 {
+		t.Errorf("pending responses = %d", rec.Pending())
+	}
+}
+
+// Down reverts the named set's last migration and answers with the
+// refreshed status.
+func TestDown_RevertsAndReportsStatus(t *testing.T) {
+	s, rec := newService(t,
+		locked, created, applied(), sqltest.Response{}, sqltest.Response{}, sqltest.Response{}, unlocked,
+		exists(true), history([]driver.Value{int64(1), "a", false}),
+	)
+	st, err := s.Down(context.Background(), "app", 1)
+	if err != nil || st.Sets[0].Version != 1 || !slices.Equal(st.Sets[0].Pending, []int{2}) || st.Ready {
+		t.Fatalf("Down 1 = %+v, %v", st, err)
+	}
+	if execs := rec.SQL(sqltest.OpExec); !slices.Contains(execs, "DROP INDEX CONCURRENTLY ix") || slices.Contains(execs, "DROP TABLE a") {
+		t.Errorf("execs = %q", execs)
+	}
+	if rec.Pending() != 0 {
+		t.Errorf("pending responses = %d", rec.Pending())
+	}
+}
+
+// An operation that fails without determining the schema's state, such as
+// one whose context is cancelled, leaves Ready where it stood.
+func TestReady_SurvivesAnAbortedOperation(t *testing.T) {
+	s, _ := newService(t, clean()...)
+	if err := s.Start(context.Background()); err != nil || !s.Ready() {
+		t.Fatalf("Start = %v, ready %v", err, s.Ready())
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.Status(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("Status = %v, want context.Canceled", err)
+	}
+	if err := s.Verify(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("Verify = %v, want context.Canceled", err)
+	}
+	if _, err := s.Up(ctx); err == nil {
+		t.Error("Up under a cancelled context succeeded")
+	}
+	if !s.Ready() {
+		t.Error("an aborted operation cleared Ready over a current schema")
+	}
+}
+
+// A service a status found behind becomes ready again once the schema is
+// corrected out of band: Ready verifies it.
+func TestReady_ReverifiesACorrectedSchema(t *testing.T) {
+	s, rec := newService(t, slices.Concat(
+		clean(), // Start
+		[]sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})}, // Status: behind
+		current(), // Ready's verify: corrected
+	)...)
+	ctx := context.Background()
+	if err := s.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if st, err := s.Status(ctx); err != nil || st.Ready {
+		t.Fatalf("Status = %+v, %v", st, err)
+	}
+	if !s.Ready() || rec.Pending() != 0 {
+		t.Errorf("ready %v, pending responses %d", s.Ready(), rec.Pending())
+	}
+	if !s.Ready() {
+		t.Error("a verified schema lost Ready")
+	}
+}
+
+// Ready's verify runs at most once per interval: a second probe inside it
+// reports not ready without reading the schema again.
+func TestReady_ReverifyIsThrottled(t *testing.T) {
+	behind := []sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})}
+	s, rec := newService(t, slices.Concat(clean(), behind, behind)...)
+	ctx := context.Background()
+	if err := s.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if _, err := s.Status(ctx); err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if s.Ready() {
+		t.Fatal("ready over a schema still behind")
+	}
+	calls := len(rec.Calls())
+	if s.Ready() || len(rec.Calls()) != calls {
+		t.Errorf("ready %v, calls %d -> %d", s.Ready(), calls, len(rec.Calls()))
+	}
+}
+
+// Before a successful Start, Ready reports the last operation's finding
+// without reading the schema itself.
+func TestReady_NoVerifyBeforeStart(t *testing.T) {
+	s, rec := newService(t)
+	if s.Ready() || len(rec.Calls()) != 0 {
+		t.Errorf("ready %v, calls %v", s.Ready(), rec.Ops())
+	}
+}
+
+// Ready is the schema's alone: a seeder whose statements do not prepare
+// fails Verify but leaves a current schema ready.
+func TestVerify_SeederFailureLeavesTheSchemaReady(t *testing.T) {
+	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{}}, clean()...)
+	f.seeder.verifyErr = errors.New("seed statement does not prepare")
+	if err := f.service.Verify(context.Background()); !errors.Is(err, f.seeder.verifyErr) {
+		t.Fatalf("Verify = %v, want the seeder's error", err)
+	}
+	if !f.service.Ready() {
+		t.Error("the seeder's failure cleared the schema's Ready")
+	}
+}
+
+// A refusal the schema's state causes is ErrConflict, with the migrator's
+// sentinel still in the chain.
+func TestUp_DirtySetIsAConflict(t *testing.T) {
+	dirty := history([]driver.Value{int64(1), "a", false}, []driver.Value{int64(2), "b", true})
+	s, _ := newService(t, locked, created, dirty, unlocked, exists(true), dirty)
+	_, err := s.Up(context.Background())
+	if !errors.Is(err, admin.ErrConflict) || !errors.Is(err, migrate.ErrDirty) {
+		t.Errorf("Up = %v, want ErrConflict and ErrDirty", err)
+	}
+	if s.Ready() {
+		t.Error("ready over a dirty set")
+	}
+}
+
+// A failed ping fails Diagnose with the ping's error and reads nothing
+// further.
+func TestDiagnose_FailingPing(t *testing.T) {
+	s, rec := newService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	d, err := s.Diagnose(ctx)
+	if !errors.Is(err, database.ErrConnectionFailed) || !strings.HasPrefix(err.Error(), "ping: ") {
+		t.Fatalf("Diagnose = %v, want the ping's ErrConnectionFailed", err)
+	}
+	if d.Dialect != "test" || d.ServerVersion != "" || len(rec.Calls()) != 0 {
+		t.Errorf("diagnostics = %+v, calls = %v", d, rec.Ops())
 	}
 }
 
