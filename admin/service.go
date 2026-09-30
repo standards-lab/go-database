@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -98,10 +99,25 @@ type Service struct {
 	seed     string
 	ready    atomic.Bool
 	started  atomic.Bool
-	verified atomic.Int64 // unix nanoseconds of Ready's last verification
+
+	// mu serializes the writes of ready with gen, which every write but a
+	// probe's counts, so a probe's finding lands only when nothing
+	// determined the schema while it read.
+	mu  sync.Mutex
+	gen uint64
+
+	// probe is Ready's schema verification; probing marks one in flight,
+	// and probed is when the last began, measured from base on the
+	// monotonic clock.
+	probe   func(context.Context) error
+	probing atomic.Bool
+	base    time.Time
+	probed  atomic.Int64
 }
 
-// New builds the service over the pool, its sqlate session, a migrator, and a catalog.
+// New builds the service over the pool, its sqlate session, a migrator, and
+// a catalog. A nil pool, db, migrator, or catalog panics, as does an
+// Options.Seed without an Options.Seeder.
 func New(pool *database.DB, db *sqlate.DB, m *migrate.Migrator, c *query.Catalog, opts Options) *Service {
 	switch {
 	case pool == nil:
@@ -119,31 +135,44 @@ func New(pool *database.DB, db *sqlate.DB, m *migrate.Migrator, c *query.Catalog
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &Service{
+	s := &Service{
 		pool: pool, db: db, migrator: m, catalog: c,
 		seeder: opts.Seeder, registry: opts.Registry, logger: logger, seed: opts.Seed,
+		probe: m.Verify, base: time.Now(),
 	}
+	s.probed.Store(int64(-reverifyInterval)) // the first probe is not throttled
+	return s
 }
 
-// Ready reports whether every set's history is clean and current. Once
-// Start has succeeded, a not-ready service verifies the schema itself, at
-// most once per five seconds and bounded by the pool's conn_timeout.
+// Ready reports the schema as the last operation that determined it found
+// it: every set's history clean and current. Once Start has succeeded, a
+// not-ready service re-verifies the schema itself, one probe at a time, at
+// most once per five seconds, and bounded by the pool's conn_timeout. A
+// true Ready is not re-checked.
 func (s *Service) Ready() bool {
 	if s.ready.Load() || !s.started.Load() {
 		return s.ready.Load()
 	}
-	now := time.Now().UnixNano()
-	last := s.verified.Load()
-	if last != 0 && now-last < int64(reverifyInterval) {
-		return false
-	}
-	if !s.verified.CompareAndSwap(last, now) {
+	if !s.probing.CompareAndSwap(false, true) {
 		return false // another probe is verifying
 	}
+	defer s.probing.Store(false)
+	now := time.Since(s.base)
+	if now-time.Duration(s.probed.Load()) < reverifyInterval {
+		return false
+	}
+	s.probed.Store(int64(now))
+	s.mu.Lock()
+	gen := s.gen
+	s.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), s.pool.ConnTimeout())
 	defer cancel()
-	if s.migrator.Verify(ctx) == nil {
-		s.ready.Store(true)
+	if s.probe(ctx) == nil {
+		s.mu.Lock()
+		if s.gen == gen { // no operation determined the schema meanwhile
+			s.ready.Store(true)
+		}
+		s.mu.Unlock()
 	}
 	return s.ready.Load()
 }
@@ -186,7 +215,7 @@ func (s *Service) Start(ctx context.Context) error {
 		}
 		s.logger.InfoContext(ctx, "seeded", "state", s.seed, "rows", n)
 	}
-	s.ready.Store(true)
+	s.setReady(true)
 	s.started.Store(true)
 	return nil
 }
@@ -234,8 +263,9 @@ func (s *Service) Seed(ctx context.Context, state string) (Seeded, error) {
 }
 
 // Reset reverts every set, applies every set, and applies the named state's
-// seed set, or the configured one when state is empty. A failure leaves the
-// schema where its step stopped.
+// seed set, or the configured one when state is empty. The revert and the
+// apply each hold the migrator's lock; the seed runs outside it. A failure
+// leaves the schema where its step stopped.
 func (s *Service) Reset(ctx context.Context, state string) (Transition, error) {
 	state, err := s.state(state)
 	if err != nil {
@@ -323,7 +353,7 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 		}
 		st.Sets = append(st.Sets, out)
 	}
-	s.ready.Store(st.Ready)
+	s.setReady(st.Ready)
 	return st, nil
 }
 
@@ -361,7 +391,9 @@ func (s *Service) Steps(ctx context.Context, set string, n int) (Status, error) 
 
 // Force sets the named set's history to version, one of its migrations or
 // 0 for none, and clears its dirty mark. It touches no schema and checks no
-// history first.
+// history first, so it can create a broken state as well as clear a dirty
+// one: a version the schema does not match leaves a clean history that
+// misstates the schema.
 func (s *Service) Force(ctx context.Context, set string, version int) (Status, error) {
 	l, err := s.layer(set)
 	if err != nil {
@@ -401,10 +433,19 @@ func (s *Service) after(ctx context.Context, err error) (Status, error) {
 func (s *Service) settle(err error) {
 	switch {
 	case err == nil:
-		s.ready.Store(true)
+		s.setReady(true)
 	case errors.Is(err, migrate.ErrDirty), errors.Is(err, migrate.ErrPending), errors.Is(err, migrate.ErrUnknownVersion):
-		s.ready.Store(false)
+		s.setReady(false)
 	}
+}
+
+// setReady records an operation's determined schema state, counting the
+// write so a probe in flight does not overwrite it.
+func (s *Service) setReady(ready bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gen++
+	s.ready.Store(ready)
 }
 
 // conflict wraps [ErrConflict] around a refusal the schema's state causes,

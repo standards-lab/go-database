@@ -110,8 +110,9 @@ func TestNew_PanicsOnPartlyFinalizedConfig(t *testing.T) {
 	cfg := finalizedConfig(t)
 	cfg.MaxOpenConns = nil
 	defer func() {
-		if recover() == nil {
-			t.Fatal("no panic on a partly finalized config")
+		msg, ok := recover().(string)
+		if !ok || !strings.HasPrefix(msg, "postgres:") {
+			t.Fatalf("panic = %q, want the provider's finalized-config panic", msg)
 		}
 	}()
 	_, _ = postgres.New(cfg)

@@ -21,7 +21,9 @@ const (
 
 // Config holds the connection identity, pool sizing, and timeouts. Its
 // numeric and duration fields are tri-state pointers: nil takes the default,
-// and an explicit zero means what it says.
+// and an explicit zero means what it says; a nil Port takes the provider's
+// default. Password comes from the secrets layer, never a committed file.
+// Options passes dialect-specific keys through to the provider.
 type Config struct {
 	Host            string            `json:"host"`
 	Name            string            `json:"name"`
@@ -186,7 +188,7 @@ func (c *Config) validate() error {
 }
 
 // Finalized reports whether Finalize has filled every field [New] reads.
-func (c Config) Finalized() bool {
+func (c *Config) Finalized() bool {
 	return c.MaxOpenConns != nil &&
 		c.MaxIdleConns != nil &&
 		c.ConnMaxLifetime != nil &&

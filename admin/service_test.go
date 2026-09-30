@@ -7,6 +7,8 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 
@@ -505,12 +507,110 @@ func TestReady_ReverifyIsThrottled(t *testing.T) {
 	if _, err := s.Status(ctx); err != nil {
 		t.Fatalf("Status: %v", err)
 	}
-	if s.Ready() {
-		t.Fatal("ready over a schema still behind")
+	if s.Ready() || rec.Pending() != 0 {
+		t.Fatalf("ready %v, pending responses %d: the probe did not read the schema", s.Ready(), rec.Pending())
 	}
 	calls := len(rec.Calls())
 	if s.Ready() || len(rec.Calls()) != calls {
 		t.Errorf("ready %v, calls %d -> %d", s.Ready(), calls, len(rec.Calls()))
+	}
+}
+
+// behindService is a started service a status found behind, so its Ready
+// probes.
+func behindService(t *testing.T) *admin.Service {
+	t.Helper()
+	s, _ := newService(t, slices.Concat(
+		clean(), []sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})},
+	)...)
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if st, err := s.Status(context.Background()); err != nil || st.Ready {
+		t.Fatalf("Status = %+v, %v", st, err)
+	}
+	return s
+}
+
+// Concurrent probes of a not-ready service verify the schema once.
+func TestReady_ConcurrentProbesVerifyOnce(t *testing.T) {
+	s := behindService(t)
+	var probes atomic.Int32
+	admin.SetProbe(s, func(context.Context) error {
+		probes.Add(1)
+		return migrate.ErrPending
+	})
+	var wg sync.WaitGroup
+	gate := make(chan struct{})
+	for range 16 {
+		wg.Go(func() {
+			<-gate
+			_ = s.Ready()
+		})
+	}
+	close(gate)
+	wg.Wait()
+	if n := probes.Load(); n != 1 {
+		t.Errorf("probes = %d, want 1", n)
+	}
+}
+
+// A probe slower than the interval still excludes a second one: a Ready
+// while it reads reports not ready without verifying.
+func TestReady_ProbesNeverOverlap(t *testing.T) {
+	s := behindService(t)
+	var probes atomic.Int32
+	entered, release := make(chan struct{}), make(chan struct{})
+	admin.SetProbe(s, func(context.Context) error {
+		if probes.Add(1) == 1 { // only the first blocks, so an overlap fails rather than hangs
+			entered <- struct{}{}
+			<-release
+		}
+		return nil
+	})
+	done := make(chan bool)
+	go func() { done <- s.Ready() }()
+	<-entered
+	admin.ExpireThrottle(s)
+	if s.Ready() || probes.Load() != 1 {
+		t.Errorf("a Ready during a probe verified again: probes = %d", probes.Load())
+	}
+	close(release)
+	if !<-done {
+		t.Error("the probe's clean verify did not set Ready")
+	}
+}
+
+// An operation that determines the schema while a probe reads wins: the
+// probe's clean verify does not overwrite the status it found behind.
+func TestReady_ProbeYieldsToAConcurrentFinding(t *testing.T) {
+	s, _ := newService(t, slices.Concat(
+		clean(),
+		[]sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})}, // Status: behind
+		[]sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})}, // Status during the probe
+	)...)
+	ctx := context.Background()
+	if err := s.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if _, err := s.Status(ctx); err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	admin.SetProbe(s, func(context.Context) error {
+		entered <- struct{}{}
+		<-release
+		return nil // a stale finding: the schema was current when it read
+	})
+	done := make(chan bool)
+	go func() { done <- s.Ready() }()
+	<-entered
+	if st, err := s.Status(ctx); err != nil || st.Ready {
+		t.Fatalf("Status = %+v, %v", st, err)
+	}
+	close(release)
+	if <-done || s.Ready() {
+		t.Error("the probe's stale finding overwrote the status found behind")
 	}
 }
 

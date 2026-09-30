@@ -26,9 +26,13 @@
 //
 // [Service.Start] applies pending migrations, verifies the seeder, and
 // applies the configured seed set, idempotently at every start. A dirty
-// set, or a history a set does not carry, fails startup; an operator
-// resolves it through the verbs. [Service.Ready] reports the schema alone:
-// every set's history clean and current.
+// set, or a history a set does not carry, fails startup, and a failed Start
+// stops the process, so an operator repairs the schema through the verbs of
+// another replica or starts a process against the corrected database.
+// [Service.Ready] reports the schema alone, as the last operation that
+// determined it found it; once Start has succeeded, a not-ready service
+// re-verifies at most once per five seconds. A true Ready is not
+// re-checked.
 //
 // # Operations
 //

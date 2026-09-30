@@ -26,7 +26,8 @@ only; the `postgres` sub-module keeps its own.
   A seeder whose statements do not prepare fails `Verify` and `Start` but no longer clears it,
   and `Start` sets it once, when every step has passed.
 - `Service.Reset` with an empty state resets to the configured `Options.Seed` set, as
-  `Service.Seed` does; it refused before.
+  `Service.Seed` does; it refused before with `admin.ErrSeedDisabled`, so a `Reset("")` with
+  `Options.Seed` set now proceeds.
 - `Service.States` returns a copy of the seeder's list.
 - The `admin.Seeder` contract states that `Seed` stays idempotent when replicas seed at once.
 - The package documentation is shortened to the contracts, each fact stated once.
@@ -39,9 +40,10 @@ only; the `postgres` sub-module keeps its own.
 - `database.Config.Finalized` reports whether `Finalize` has filled every field `New` reads; the
   providers check it.
 - `database.DB.ConnTimeout` returns the configured `conn_timeout`.
-- Once `Start` has succeeded, a not-ready `Service.Ready` verifies the schema itself, at most
-  once per five seconds and bounded by the pool's `conn_timeout`, so a replica whose schema is
-  corrected out of band returns to rotation.
+- Once `Start` has succeeded, a not-ready `Service.Ready` verifies the schema itself, one probe
+  at a time, at most once per five seconds, and bounded by the pool's `conn_timeout`, so a
+  replica whose schema is corrected out of band returns to rotation. A probe's clean finding
+  yields to any operation that determined the schema while it read.
 
 ### Fixed
 
