@@ -71,9 +71,10 @@ type Versioner interface {
 
 // Options holds the optional collaborators and the startup seed set.
 type Options struct {
-	// Seed names the state whose set Start applies and a seed or reset
-	// naming no state uses. Empty applies none at startup; a name the
-	// seeder does not declare fails Start before it reads the schema.
+	// Seed names the state whose set Start applies, and the state Seed and
+	// Reset use when a request names none. Empty applies none at startup; a
+	// name the seeder does not declare fails Start before it reads the
+	// schema.
 	Seed string
 
 	// Seeder is the consumer's seed mechanism; nil refuses Seed and Reset.
@@ -100,8 +101,8 @@ type Service struct {
 	ready    atomic.Bool
 	started  atomic.Bool
 
-	// mu serializes the writes of ready with gen, which every write but a
-	// probe's counts, so a probe's finding lands only when nothing
+	// mu serializes writes of ready with gen. Every write except a probe's
+	// increments gen, so a probe stores its finding only when no operation
 	// determined the schema while it read.
 	mu  sync.Mutex
 	gen uint64

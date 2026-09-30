@@ -17,9 +17,9 @@ is added when it is about to be built.
 - **database** wraps the pool: configuration, lifecycle, readiness, and the connectivity
   sentinels. Built.
 - **admin** is the database admin service over `sqlate`, generic over the consumer's migrator,
-  seeder, registry, catalog, and pool. `admin/doc.go` states its startup sequence, its verbs,
-  its named states, its destructive class, and its migration sets: one service administers
-  every set its migrator runs. Built.
+  seeder, registry, catalog, and pool. `admin/doc.go` states its construction, its verbs, its
+  startup sequence, its errors, and its migration sets: one service administers every set its
+  migrator runs. Built.
 - **postgres** is the PostgreSQL provider: it constructs the pool over pgx's `database/sql`
   adapter from the configuration block, and supplies no dialect — the dialect is
   `sqlate/postgres`'s. Built.

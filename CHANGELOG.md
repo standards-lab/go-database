@@ -26,11 +26,10 @@ only; the `postgres` sub-module keeps its own.
   A seeder whose statements do not prepare fails `Verify` and `Start` but no longer clears it,
   and `Start` sets it once, when every step has passed.
 - `Service.Reset` with an empty state resets to the configured `Options.Seed` set, as
-  `Service.Seed` does; it refused before with `admin.ErrSeedDisabled`, so a `Reset("")` with
-  `Options.Seed` set now proceeds.
+  `Service.Seed` does. It refused with `admin.ErrSeedDisabled` before.
 - `Service.States` returns a copy of the seeder's list.
 - The `admin.Seeder` contract states that `Seed` stays idempotent when replicas seed at once.
-- The package documentation is shortened to the contracts, each fact stated once.
+- Each package comment lists the package's API, and each contract is stated once, on its symbol.
 
 ### Added
 

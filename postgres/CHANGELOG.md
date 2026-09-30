@@ -18,8 +18,8 @@ changelog covers this sub-module only; the base module keeps its own.
 
 ### Fixed
 
-- A `Host` that is a Unix-socket directory (starting with `/`) failed to parse: it was joined
-  into the URL's authority. It now rides the connection URL's query with the port.
+- A `Host` that is a Unix-socket directory (starting with `/`) failed to parse, because `New`
+  joined it into the URL's authority. `New` now passes it, with the port, in the URL's query.
 
 ## [v0.3.0] - 2026-09-04
 

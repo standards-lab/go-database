@@ -6,6 +6,18 @@
 // and the statements registry are the consumer's, passed in at
 // construction. A wiring defect panics, per the database package.
 //
+// # Construction
+//
+// [New] builds a [Service] over the pool, its sqlate session, the
+// consumer's migrator, and its pattern catalog. [Options] carries the
+// optional collaborators and the startup seed set:
+//
+//   - [Seeder] is the consumer's seed mechanism over its named sets.
+//   - [Registry] lists each domain's compiled statements as an [Entry].
+//
+// [Versioner] is the optional dialect capability that supplies the
+// statement reading the server's version.
+//
 // # Migration sets
 //
 // One service administers every set its migrator runs, declared
@@ -18,9 +30,9 @@
 //
 // # Startup
 //
-// The consumer declares the service at the stage its own stage table
-// gives it, after the stage that starts the pool and before whatever needs
-// the corrected schema:
+// The consumer declares the service at the stage its own stage table gives
+// it, after the stage that starts the pool and before whatever needs the
+// corrected schema:
 //
 //	lc.Add(lifecycle.Service{Name: "schema", Stage: stageSchema, Start: svc.Start, Check: svc})
 //
@@ -36,11 +48,32 @@
 //
 // # Operations
 //
-// Each verb triggers the library function of its name, and the mutating
-// ones return the refreshed [Status]; [Service.Reset] is the one transition
-// to a named state from any other. Reset, Down, and Force are destructive,
-// and the administrative surface, application code, decides who may call
-// them.
+// The schema verbs run the migrator's function of their name, and the seed
+// verbs the seeder's:
+//
+//   - [Service.Verify] checks every set's history and the seeder's
+//     statements.
+//   - [Service.Status] reads the schema into a [Status]: one [SetStatus]
+//     per set, and one [MigrationInfo] per migration.
+//   - [Service.Up] applies every set's pending migrations.
+//   - [Service.Down] reverts, [Service.Steps] applies or reverts, and
+//     [Service.Force] sets the history version of the set each names.
+//   - [Service.States] lists the seeder's named states.
+//   - [Service.Seed] applies a state's seed set and returns the rows it
+//     [Seeded].
+//   - [Service.Reset] reverts and reapplies every set and seeds a named
+//     state, returning a [Transition]. It is the one transition to a named
+//     state from any other.
+//   - [Service.Catalog] reads the pattern catalog into a [Catalog] of
+//     [Pattern] values.
+//   - [Service.Statements] reads the registry into an [Inventory] of
+//     [DomainStatements], each listing its [StatementInfo] values.
+//   - [Service.Diagnose] reads the database's health into [Diagnostics],
+//     including the [Pool] counters.
+//
+// The mutating verbs return the refreshed [Status]. Reset, Down, and Force
+// are destructive; the administrative surface, which is application code,
+// decides who may call them.
 //
 // # Errors
 //
