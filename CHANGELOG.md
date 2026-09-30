@@ -17,6 +17,7 @@ only; the `postgres` sub-module keeps its own.
 
 ### Changed
 
+- The `go-core` requirement is v0.5.0; the integer overrides use its `config.SetFromEnv`.
 - **Breaking:** `database.ErrConnectionFailed` is `sqlate.ErrConnectionFailed`, one sentinel for
   a failure to reach the database, whether the pool or a session raised it.
 - **Breaking:** `Service.Force` refuses a version that is not one of the named set's migrations

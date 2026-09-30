@@ -19,9 +19,6 @@ type Env struct {
 // NewEnv composes the override names under prefix, such as
 // PREFIX_DATABASE_HOST.
 func NewEnv(prefix string) Env {
-	if prefix == "" {
-		return Env{}
-	}
 	return Env{
 		Host: config.EnvName(
 			prefix, "database", "host",

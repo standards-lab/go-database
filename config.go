@@ -126,26 +126,14 @@ func (c *Config) applyEnv() error {
 	if v := os.Getenv(c.Env.Password); v != "" {
 		c.Password = v
 	}
-	if v := os.Getenv(c.Env.Port); v != "" {
-		port, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", c.Env.Port, err)
-		}
-		c.Port = &port
+	if err := config.SetFromEnv(&c.Port, c.Env.Port, strconv.Atoi); err != nil {
+		return err
 	}
-	if v := os.Getenv(c.Env.MaxOpenConns); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", c.Env.MaxOpenConns, err)
-		}
-		c.MaxOpenConns = &n
+	if err := config.SetFromEnv(&c.MaxOpenConns, c.Env.MaxOpenConns, strconv.Atoi); err != nil {
+		return err
 	}
-	if v := os.Getenv(c.Env.MaxIdleConns); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", c.Env.MaxIdleConns, err)
-		}
-		c.MaxIdleConns = &n
+	if err := config.SetFromEnv(&c.MaxIdleConns, c.Env.MaxIdleConns, strconv.Atoi); err != nil {
+		return err
 	}
 	if err := config.SetDurationFromEnv(&c.ConnMaxLifetime, c.Env.ConnMaxLifetime); err != nil {
 		return err
