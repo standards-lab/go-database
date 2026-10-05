@@ -47,7 +47,7 @@ The repository uses a Go workspace and [mise](https://mise.jdx.dev):
 ```
 mise run check      # build, vet, format, fix, tidy, test, and lint every module; writes nothing
 mise run currency   # report requirements, Go, tools, and actions behind their latest
-mise run upgrade    # upgrade every module's requirements and the tools to their latest
+mise run upgrade    # upgrade every module's go directive and requirements, and the tools, to their latest
 ```
 
 ## License
