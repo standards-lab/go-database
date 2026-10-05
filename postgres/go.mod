@@ -3,7 +3,7 @@ module github.com/standards-lab/go-database/postgres
 go 1.27
 
 require (
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/standards-lab/go-database v0.7.0
 )
 
