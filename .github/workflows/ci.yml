@@ -6,8 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-# One job runs mise run check, which loops over every module in GO_MODULES
-# with the workspace off.
 jobs:
   check:
     runs-on: ubuntu-latest
