@@ -340,12 +340,15 @@ func TestConfig_Validate(t *testing.T) {
 
 func TestConfig_ValidateAllowsZeroPools(t *testing.T) {
 	// Zero means unlimited open connections and no idle pool, per
-	// database/sql semantics; both survive validation.
+	// database/sql semantics; both survive defaults and validation.
 	cfg := validConfig()
 	cfg.MaxOpenConns = new(0)
 	cfg.MaxIdleConns = new(0)
 
 	if err := cfg.Finalize(""); err != nil {
-		t.Errorf("Finalize rejected zero pool settings: %v", err)
+		t.Fatalf("Finalize rejected zero pool settings: %v", err)
+	}
+	if *cfg.MaxOpenConns != 0 || *cfg.MaxIdleConns != 0 {
+		t.Errorf("pools = %d open, %d idle after Finalize, want the explicit zeros kept", *cfg.MaxOpenConns, *cfg.MaxIdleConns)
 	}
 }

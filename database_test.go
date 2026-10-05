@@ -8,7 +8,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/standards-lab/go-core/config"
 	"github.com/standards-lab/go-database"
 )
 
@@ -122,11 +124,23 @@ func TestNew_AppliesPoolSettings(t *testing.T) {
 	}
 }
 
+// Conn returns the pool New wrapped, and ConnTimeout the configured
+// conn_timeout.
 func TestDB_Accessors(t *testing.T) {
-	db := newTestDB(t, &stubConnector{})
+	cfg := database.Config{Name: "app", ConnTimeout: new(config.Duration(3 * time.Second))}
+	if err := cfg.Finalize(""); err != nil {
+		t.Fatalf("finalize config: %v", err)
+	}
+	conn := sql.OpenDB(&stubConnector{})
+	t.Cleanup(func() { _ = conn.Close() })
 
-	if db.Conn() == nil {
-		t.Error("Conn() = nil")
+	db := database.New(conn, cfg)
+
+	if db.Conn() != conn {
+		t.Error("Conn() is not the pool New wrapped")
+	}
+	if got := db.ConnTimeout(); got != 3*time.Second {
+		t.Errorf("ConnTimeout() = %s, want 3s", got)
 	}
 }
 
