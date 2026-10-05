@@ -82,8 +82,8 @@ func applying() []sqltest.Response {
 // reverse, the history table's drop, and the unlock.
 func resetting() []sqltest.Response {
 	rs := []sqltest.Response{locked, created, applied()}
-	for i := len(set) - 1; i >= 0; i-- {
-		if set[i].Transactional {
+	for _, s := range slices.Backward(set) {
+		if s.Transactional {
 			rs = append(rs, sqltest.Response{}, sqltest.Response{}) // down, delete
 		} else {
 			rs = append(rs, sqltest.Response{}, sqltest.Response{}, sqltest.Response{}) // dirty, down, delete
