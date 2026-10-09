@@ -11,7 +11,15 @@ import (
 	"time"
 
 	"github.com/standards-lab/go-core/config"
+	"github.com/standards-lab/go-core/lifecycle"
 	"github.com/standards-lab/go-database"
+)
+
+// A *DB takes part in a lifecycle.Coordinator's startup, shutdown, and
+// readiness as the Value of a graph.Dependency, with no adapter.
+var (
+	_ lifecycle.Subsystem        = (*database.DB)(nil)
+	_ lifecycle.ReadinessChecker = (*database.DB)(nil)
 )
 
 // stubConnector produces connections that consult its failure flag on every
@@ -227,6 +235,24 @@ func TestDB_ShutdownBeforeStart(t *testing.T) {
 	// drain-after-failed-startup path cannot compound the failure.
 	if err := db.Shutdown(context.Background()); err != nil {
 		t.Errorf("Shutdown before Start = %v, want nil", err)
+	}
+}
+
+func TestDB_ShutdownAfterFailedStart(t *testing.T) {
+	connector := &stubConnector{}
+	connector.fail.Store(true)
+	db := newTestDB(t, connector)
+
+	// The Coordinator shuts down a participant whose Start failed; that
+	// Shutdown closes the pool cleanly and leaves the DB not ready.
+	if err := db.Start(context.Background()); err == nil {
+		t.Fatal("Start succeeded against a refusing connector")
+	}
+	if err := db.Shutdown(context.Background()); err != nil {
+		t.Errorf("Shutdown after a failed Start = %v, want nil", err)
+	}
+	if err := db.Ping(context.Background()); !errors.Is(err, database.ErrNotReady) {
+		t.Errorf("Ping after Shutdown = %v, want ErrNotReady", err)
 	}
 }
 

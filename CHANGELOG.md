@@ -7,6 +7,18 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** The `go-core` requirement is v0.6.0. An importer still on `lifecycle.Service`,
+  `Add`, or stages breaks, since the requirement pulls v0.6.0 into its build.
+- `*database.DB` joins a graph-backed `lifecycle.Coordinator` as a node's value: the Coordinator
+  infers from its methods that it is a `Starter`, a `Stopper`, and a `ReadinessChecker`, so it
+  needs no adapter. Under the Coordinator, `Shutdown` also follows a failed `Start`, which `DB`
+  already handles safely.
+- `*admin.Service` joins the same way as a `Starter` and a `ReadinessChecker`; its node uses the
+  pool's node, which orders it above the pool. The package comments show graph registration in
+  place of `lc.Add(lifecycle.Service{...})`.
+
 ## [v0.7.0] - 2026-09-30
 
 ### Removed

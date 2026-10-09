@@ -3,6 +3,6 @@ module github.com/standards-lab/go-database
 go 1.27
 
 require (
-	github.com/standards-lab/go-core v0.5.0
+	github.com/standards-lab/go-core v0.6.0
 	github.com/standards-lab/sqlate v0.4.1
 )
