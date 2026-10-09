@@ -11,8 +11,10 @@ only; the `postgres` sub-module keeps its own.
 
 ### Changed
 
-- **Breaking:** The `go-core` requirement is v0.6.0. An importer still on `lifecycle.Service`,
-  `Add`, or stages breaks, since the requirement pulls v0.6.0 into its build.
+- **Breaking:** The `go-core` requirement is v0.7.0 and the `sqlate` requirement v0.5.0. An
+  importer still on go-core's `lifecycle.Service`, `Add`, or stages breaks, since the
+  requirement pulls go-core v0.6.0's lifecycle into its build, and sqlate's `query.Scanner` and
+  `query.Scalar` return every `time.Time` in `time.UTC`, whatever `time.Local` is.
 - `*database.DB` joins a graph-backed `lifecycle.Coordinator` as a node's value: the Coordinator
   infers from its methods that it is a `Starter`, a `Stopper`, and a `ReadinessChecker`, so it
   needs no adapter. Under the Coordinator, `Shutdown` also follows a failed `Start`, which `DB`
