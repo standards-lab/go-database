@@ -9,6 +9,7 @@ The judgement calls the standards-reviewer applies to go-database, beyond what `
 - `architecture/standards/go-elemental/principles/release-and-ci.md`: the check, currency and upgrade tasks over `GO_MODULES`, and a changelog per module, `CHANGELOG.md` and `postgres/CHANGELOG.md`.
 - `architecture/standards/go-elemental/principles/lifecycle-and-context.md`: `DB`'s `Start`, `Shutdown` and `Ready`, and `admin.Service`'s `Start` and `Ready`; the constructors' panics on an unfinalized `Config` or a missing pool, and `postgres.New`'s error on a reserved option.
 - `architecture/standards/go-elemental/principles/baseline-standards.md`: `Config`'s pool-size and timeout defaults, and `admin`, which takes every migration set, seed set, catalog and registry from its consumer.
+- `architecture/standards/go-elemental/principles/utc-times.md`: `postgres.New`'s connections, which scan `timestamptz` in UTC.
 - `architecture/principles/service-tiers.md`: `DB.Conn`, `Config.Options`, and the `postgres` provider.
 - `architecture/principles/validation-first.md`: `Config.Finalize`, and `admin`'s verbs, which refuse an argument outside their domain before any I/O.
 - `architecture/principles/context-architecture.md`: the README and each `doc.go` are the homes.
