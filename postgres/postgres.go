@@ -1,13 +1,16 @@
 package postgres
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/standards-lab/go-database"
@@ -36,7 +39,20 @@ func New(cfg database.Config) (*database.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return database.New(stdlib.OpenDB(*connCfg), cfg), nil
+	return database.New(stdlib.OpenDB(*connCfg, stdlib.OptionAfterConnect(scanUTC)), cfg), nil
+}
+
+// scanUTC registers, on each new connection's type map, a timestamptz codec
+// that returns its values in time.UTC; pgx's default codec returns them in
+// time.Local, and the session's TimeZone does not change that. timestamp
+// needs no codec: pgx already returns it in time.UTC.
+func scanUTC(_ context.Context, conn *pgx.Conn) error {
+	conn.TypeMap().RegisterType(&pgtype.Type{
+		Name:  "timestamptz",
+		OID:   pgtype.TimestamptzOID,
+		Codec: &pgtype.TimestamptzCodec{ScanLocation: time.UTC},
+	})
+	return nil
 }
 
 // connConfig composes the connection URL from cfg, parses it, and sets the
