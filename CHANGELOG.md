@@ -7,6 +7,22 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.8.0] - 2026-10-09
+
+### Changed
+
+- **Breaking:** The `go-core` requirement is v0.7.0 and the `sqlate` requirement v0.5.0, whose
+  `query.Scanner` and `query.Scalar` return every `time.Time` in `time.UTC`, whatever
+  `time.Local` is. An importer still on go-core's `lifecycle.Service`, `Add`, or stages breaks,
+  since the requirements pull go-core v0.6.0's lifecycle into its build.
+- `*database.DB` joins a graph-backed `lifecycle.Coordinator` as a node's value: the Coordinator
+  infers from its methods that it is a `Starter`, a `Stopper`, and a `ReadinessChecker`, so it
+  needs no adapter. Under the Coordinator, `Shutdown` also follows a failed `Start`, which `DB`
+  already handles safely.
+- `*admin.Service` joins the same way as a `Starter` and a `ReadinessChecker`; its node uses the
+  pool's node, which orders it above the pool. The package comments show graph registration in
+  place of `lc.Add(lifecycle.Service{...})`.
+
 ## [v0.7.0] - 2026-09-30
 
 ### Removed
@@ -263,7 +279,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.8.0...HEAD
+[v0.8.0]: https://github.com/standards-lab/go-database/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/standards-lab/go-database/compare/v0.6.2...v0.7.0
 [v0.6.2]: https://github.com/standards-lab/go-database/compare/v0.6.1...v0.6.2
 [v0.6.1]: https://github.com/standards-lab/go-database/compare/v0.6.0...v0.6.1

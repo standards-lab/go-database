@@ -148,8 +148,12 @@ func (f *fakeSeeder) Seed(_ context.Context, state string) (admin.Seeded, error)
 	return admin.Seeded{"things": 2}, nil
 }
 
-// The service is the schema stage's readiness check.
-var _ lifecycle.ReadinessChecker = (*admin.Service)(nil)
+// A *Service takes part in a lifecycle.Coordinator's startup and readiness
+// as the Value of a graph.Dependency, with no adapter.
+var (
+	_ lifecycle.Starter          = (*admin.Service)(nil)
+	_ lifecycle.ReadinessChecker = (*admin.Service)(nil)
+)
 
 // fakeRegistry is one domain's compiled statements.
 type fakeRegistry []admin.Entry

@@ -30,11 +30,25 @@
 //
 // # Startup
 //
-// The consumer declares the service at the stage its own stage table gives
-// it, after the stage that starts the pool and before whatever needs the
-// corrected schema:
+// The consumer defines the service as a node of its go-core graph. The
+// Service is a lifecycle Starter and ReadinessChecker, so the Coordinator
+// starts it in its layer and lists its readiness among its Checks under the
+// node's name. Its node uses the pool's node, which places it in a layer
+// above the pool, and a node that needs the corrected schema uses the
+// service's node, or orders after it with Scope.After:
 //
-//	lc.Add(lifecycle.Service{Name: "schema", Stage: stageSchema, Start: svc.Start, Check: svc})
+//	schema := g.Define("schema", func(s *graph.Scope) (*admin.Service, error) {
+//		pool := s.Use(db)
+//		session := sqlate.Wrap(pool.Conn(), dialect)
+//		m, err := migrate.New(session, sets, migrate.Options{})
+//		if err != nil {
+//			return nil, err
+//		}
+//		return admin.New(pool, session, m, catalog, opts), nil
+//	})
+//
+// The Service is not a Stopper: it holds nothing the pool's shutdown does
+// not release.
 //
 // [Service.Start] applies pending migrations, verifies the seeder, and
 // applies the configured seed set, idempotently at every start. A dirty

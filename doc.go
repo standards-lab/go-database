@@ -19,10 +19,27 @@
 // [New] wraps a provider-constructed pool in a [DB]. [DB.Start] and
 // [DB.Shutdown] are its lifecycle hooks, [DB.Ready] and [DB.Ping] check
 // connectivity, [DB.Conn] returns the pool, and [DB.ConnTimeout] returns
-// the bound Start and Ready apply to a ping. A composition root declares
-// the pool as one lifecycle service:
+// the bound Start and Ready apply to a ping.
 //
-//	lc.Add(lifecycle.Service{Name: "database", Start: db.Start, Shutdown: db.Shutdown, Check: db})
+// A composition root defines the DB as a node of a go-core graph and hands
+// the built System to a lifecycle Coordinator. The DB is a lifecycle
+// Starter, Stopper, and ReadinessChecker, so the Coordinator starts it in
+// its layer, shuts it down, and lists its readiness among its Checks under
+// the node's name. The DB needs no adapter:
+//
+//	g := graph.New()
+//	db := g.Define("database", func(*graph.Scope) (*database.DB, error) {
+//		return postgres.New(cfg)
+//	})
+//	// The nodes that query the database call s.Use(db).
+//	sys, err := g.Build(roots...)
+//	if err != nil {
+//		return err
+//	}
+//	return lifecycle.New(sys, lifecycleCfg).Run(ctx)
+//
+// The Coordinator also calls Shutdown after a failed Start, which
+// [DB.Shutdown] allows.
 //
 // # Errors
 //

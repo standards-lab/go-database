@@ -7,6 +7,18 @@ changelog covers this sub-module only; the base module keeps its own.
 
 ## [Unreleased]
 
+## [v0.5.0] - 2026-10-09
+
+### Changed
+
+- **Breaking:** a `timestamptz` read through a pool `New` builds is in `time.UTC`, whatever
+  `time.Local` or the session's `TimeZone` is; pgx returned it in `time.Local` before. The
+  instant is unchanged. Each connection registers pgx's `TimestamptzCodec` with
+  `ScanLocation: time.UTC` as it opens. `timestamp` reads were already in `time.UTC`.
+- **Breaking:** The `go-database` requirement is v0.8.0, which requires `go-core` v0.7.0 and
+  `sqlate` v0.5.0. An importer still on go-core's `lifecycle.Service`, `Add`, or stages breaks,
+  since the requirement pulls go-core v0.6.0's lifecycle into its build.
+
 ## [v0.4.0] - 2026-09-30
 
 ### Changed
@@ -72,7 +84,8 @@ The first release of the PostgreSQL provider, against `github.com/standards-lab/
   classifying constraint violations arrives with the write path. `postgres.Provider` types the
   selection constant.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/v0.4.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/v0.5.0...HEAD
+[v0.5.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.4.0...postgres/v0.5.0
 [v0.4.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.3.0...postgres/v0.4.0
 [v0.3.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.2.0...postgres/v0.3.0
 [v0.2.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.1.1...postgres/v0.2.0

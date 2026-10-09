@@ -1,4 +1,4 @@
-github.com/standards-lab/go-core v0.5.0 h1:ZWe5o92DIICVH43B5TNXTfyG5H/O6Vs9CsBUUTS8whI=
-github.com/standards-lab/go-core v0.5.0/go.mod h1:Yl/R+gM9YWczsePBCKXdPGh3FSdZ/5i8SapLIh3BDHU=
-github.com/standards-lab/sqlate v0.4.1 h1:IvptIl7JXdtDPzNEv3imAIf2evJIfe4nxhEP6CI+wRU=
-github.com/standards-lab/sqlate v0.4.1/go.mod h1:pikNmGf/z3x46SBWFXgt/xKIDZuquSgCoXy5OWBFFR4=
+github.com/standards-lab/go-core v0.7.0 h1:eVBSSZ3axkQfh0+iYfuim6oXiOBR+DRXHn4fzlEDP4E=
+github.com/standards-lab/go-core v0.7.0/go.mod h1:Yl/R+gM9YWczsePBCKXdPGh3FSdZ/5i8SapLIh3BDHU=
+github.com/standards-lab/sqlate v0.5.0 h1:2QEbhIzy2mtMxY2XMfqqqzOlCZs2I3vZNN7fB9daBjw=
+github.com/standards-lab/sqlate v0.5.0/go.mod h1:pikNmGf/z3x46SBWFXgt/xKIDZuquSgCoXy5OWBFFR4=

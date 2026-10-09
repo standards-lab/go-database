@@ -2,7 +2,9 @@ package postgres_test
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"maps"
 	"net"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgproto3"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/standards-lab/go-database"
 	"github.com/standards-lab/go-database/postgres"
@@ -304,4 +307,165 @@ func TestNew_PanicsOnUnfinalizedConfig(t *testing.T) {
 		}
 	}()
 	_, _ = postgres.New(database.Config{Name: "app"})
+}
+
+// serveTimestamptz answers every connection on ln as a server that admits
+// the login and returns at, as a one-row timestamptz column, for any
+// SELECT, in text through the simple protocol and in binary through the
+// extended one. It reports each connection's failure on the channel.
+func serveTimestamptz(t *testing.T, ln net.Listener, at time.Time) <-chan error {
+	t.Helper()
+	errs := make(chan error, 4)
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				if err := answerTimestamptz(conn, at); err != nil {
+					select {
+					case errs <- err:
+					default:
+					}
+				}
+			}()
+		}
+	}()
+	return errs
+}
+
+func answerTimestamptz(conn net.Conn, at time.Time) error {
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	be := pgproto3.NewBackend(conn, conn)
+	if _, err := be.ReceiveStartupMessage(); err != nil {
+		return err
+	}
+	be.Send(&pgproto3.AuthenticationOk{})
+	// pgx runs the simple protocol only on a server reporting these.
+	be.Send(&pgproto3.ParameterStatus{Name: "standard_conforming_strings", Value: "on"})
+	be.Send(&pgproto3.ParameterStatus{Name: "client_encoding", Value: "UTF8"})
+	be.Send(&pgproto3.BackendKeyData{ProcessID: 1, SecretKey: []byte{0, 0, 0, 1}})
+	be.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
+	if err := be.Flush(); err != nil {
+		return err
+	}
+
+	column := func(format int16) *pgproto3.RowDescription {
+		return &pgproto3.RowDescription{Fields: []pgproto3.FieldDescription{{
+			Name: []byte("at"), DataTypeOID: pgtype.TimestamptzOID, DataTypeSize: 8,
+			TypeModifier: -1, Format: format,
+		}}}
+	}
+	value := func(format int16) [][]byte {
+		if format == pgtype.BinaryFormatCode {
+			y2k := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+			return [][]byte{binary.BigEndian.AppendUint64(nil, uint64(at.Sub(y2k).Microseconds()))}
+		}
+		return [][]byte{[]byte(at.UTC().Format("2006-01-02 15:04:05.999999") + "+00")}
+	}
+	var format int16
+	for {
+		msg, err := be.Receive()
+		if err != nil {
+			return err
+		}
+		switch msg := msg.(type) {
+		case *pgproto3.Query:
+			if strings.HasPrefix(strings.ToUpper(msg.String), "SELECT") {
+				be.Send(column(pgtype.TextFormatCode))
+				be.Send(&pgproto3.DataRow{Values: value(pgtype.TextFormatCode)})
+				be.Send(&pgproto3.CommandComplete{CommandTag: []byte("SELECT 1")})
+			} else {
+				be.Send(&pgproto3.EmptyQueryResponse{})
+			}
+			be.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
+		case *pgproto3.Parse:
+			be.Send(&pgproto3.ParseComplete{})
+		case *pgproto3.Describe:
+			if msg.ObjectType == 'S' {
+				be.Send(&pgproto3.ParameterDescription{})
+				be.Send(column(pgtype.TextFormatCode))
+			} else {
+				be.Send(column(format))
+			}
+		case *pgproto3.Bind:
+			format = pgtype.TextFormatCode
+			if len(msg.ResultFormatCodes) > 0 {
+				format = msg.ResultFormatCodes[0]
+			}
+			be.Send(&pgproto3.BindComplete{})
+		case *pgproto3.Execute:
+			be.Send(&pgproto3.DataRow{Values: value(format)})
+			be.Send(&pgproto3.CommandComplete{CommandTag: []byte("SELECT 1")})
+		case *pgproto3.Close:
+			be.Send(&pgproto3.CloseComplete{})
+		case *pgproto3.Sync:
+			be.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
+		case *pgproto3.Terminate:
+			return nil
+		default:
+			return fmt.Errorf("unexpected message %T", msg)
+		}
+		if err := be.Flush(); err != nil {
+			return err
+		}
+	}
+}
+
+// Every time a workspace library returns is in time.UTC: a timestamptz
+// read through the pool New builds is the UTC instant, not that instant in
+// time.Local (Europe/London, from TestMain), in pgx's text format and in
+// its binary one.
+func TestNew_ReadsTimestamptzInUTC(t *testing.T) {
+	want := time.Date(2026, 7, 1, 12, 30, 15, 123456000, time.UTC)
+	cases := []struct {
+		name    string
+		options map[string]string
+	}{
+		{"text, simple protocol", map[string]string{"sslmode": "disable", "default_query_exec_mode": "simple_protocol"}},
+		{"binary, extended protocol", noTLS},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			errs := serveTimestamptz(t, ln, want)
+			cfg := database.Config{
+				Name: "app", User: "app",
+				Host: "127.0.0.1", Port: new(ln.Addr().(*net.TCPAddr).Port), Options: tc.options,
+			}
+			if err := cfg.Finalize(""); err != nil {
+				t.Fatalf("finalize config: %v", err)
+			}
+			db, err := postgres.New(cfg)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			t.Cleanup(func() { _ = db.Shutdown(context.Background()) })
+			if err := db.Start(context.Background()); err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+
+			var got time.Time
+			if err := db.Conn().QueryRowContext(context.Background(), "SELECT at FROM t").Scan(&got); err != nil {
+				select {
+				case serr := <-errs:
+					t.Fatalf("query: %v (test server: %v)", err, serr)
+				default:
+					t.Fatalf("query: %v", err)
+				}
+			}
+			if got != want {
+				t.Errorf("timestamptz = %v, want %v", got, want)
+			}
+			if got.Location() != time.UTC {
+				t.Errorf("Location() = %v, want UTC", got.Location())
+			}
+		})
+	}
 }
