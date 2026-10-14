@@ -10,12 +10,12 @@
 //
 // [New] builds a [Service] over the pool, its sqlate session, the
 // consumer's migrator, and its pattern catalog. [Options] carries the
-// optional collaborators and the startup seed set:
+// optional collaborators, the startup seed set, and the reset hook:
 //
 //   - [Seeder] is the consumer's seed mechanism over its named sets.
 //   - [Registry] lists each domain's compiled statements as an [Entry].
-//   - [Options.OnReset] is the consumer's step in [Service.Reset], between the apply
-//     and the seed.
+//   - [Options.OnReset] is the consumer's step in [Service.Reset],
+//     between the apply and the seed.
 //
 // [Versioner] is the optional dialect capability that supplies the
 // statement reading the server's version.
