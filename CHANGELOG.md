@@ -7,6 +7,13 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** The `go-core` requirement is v0.10.0. An importer whose graph holds a value with
+  `Ready() bool` and no `Start` loses that value's readiness check, since the requirement pulls
+  go-core v0.8.0's narrower `Coordinator.Checks` into its build. `*database.DB` and
+  `*admin.Service` have `Start`, so their checks remain.
+
 ## [v0.8.0] - 2026-10-09
 
 ### Changed
