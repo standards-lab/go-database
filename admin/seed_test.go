@@ -156,7 +156,8 @@ func TestStates_ReturnsACopy(t *testing.T) {
 
 // Reset reverts the applied set under the lock and drops its history
 // table, applies it again, seeds the named state's set, and answers with
-// the state, the refreshed status, and the rows.
+// the state, the refreshed status, and the rows. With no OnReset hook, the
+// transition is these steps alone.
 func TestReset_RevertsAppliesAndSeeds(t *testing.T) {
 	responses := slices.Concat(resetting(), applying(), current())
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{states: []string{"default", "empty"}}}, responses...)
@@ -239,5 +240,126 @@ func TestReset_FailureAtTheSeed(t *testing.T) {
 	}
 	if !f.service.Ready() || f.rec.Pending() != 0 {
 		t.Errorf("ready %v, pending %d", f.service.Ready(), f.rec.Pending())
+	}
+}
+
+// hookCall is what an OnReset hook saw when Reset called it.
+type hookCall struct {
+	state   string
+	pending int      // scripted responses not yet consumed
+	seeded  []string // the states seeded so far
+}
+
+// recordHook returns an OnReset hook that records each call into calls,
+// with how far the fixture's script and seeder had run, and answers err.
+// It reads *f at the call, so it can be wired before the fixture is built.
+func recordHook(f *fixture, calls *[]hookCall, err error) func(context.Context, string) error {
+	return func(_ context.Context, state string) error {
+		*calls = append(*calls, hookCall{state: state, pending: f.rec.Pending(), seeded: slices.Clone(f.seeder.seeded)})
+		return err
+	}
+}
+
+// Reset calls the hook once, with the state it resolved, after the revert
+// and the apply have run and before the seed: at the call, only the status
+// read is left of the script, and nothing is seeded.
+func TestReset_HookRunsBetweenTheApplyAndTheSeed(t *testing.T) {
+	cases := []struct {
+		name, configured, request, want string
+	}{
+		{name: "named state", request: "demo", want: "demo"},
+		{name: "configured state", configured: "default", want: "default"},
+		{name: "named over configured", configured: "default", request: "demo", want: "demo"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls []hookCall
+			var f fixture
+			opts := admin.Options{
+				Seed:    tc.configured,
+				Seeder:  &fakeSeeder{states: []string{"default", "demo"}},
+				OnReset: recordHook(&f, &calls, nil),
+			}
+			f = newFixture(t, testDialect{}, opts, slices.Concat(resetting(), applying(), current())...)
+			tr, err := f.service.Reset(context.Background(), tc.request)
+			if err != nil || tr.State != tc.want {
+				t.Fatalf("Reset = %+v, %v", tr, err)
+			}
+			want := []hookCall{{state: tc.want, pending: len(current()), seeded: nil}}
+			if !slices.EqualFunc(calls, want, func(a, b hookCall) bool {
+				return a.state == b.state && a.pending == b.pending && slices.Equal(a.seeded, b.seeded)
+			}) {
+				t.Errorf("hook calls = %+v, want %+v", calls, want)
+			}
+			if !slices.Equal(f.seeder.seeded, []string{tc.want}) || f.rec.Pending() != 0 {
+				t.Errorf("seeded %v after the hook, pending %d", f.seeder.seeded, f.rec.Pending())
+			}
+		})
+	}
+}
+
+// A hook that fails stops Reset before the seed: the error names the step
+// and wraps the hook's, nothing is seeded, and the schema is left applied
+// and current, as the status read after it finds.
+func TestReset_FailureAtTheHook(t *testing.T) {
+	boom := errors.New("hook failed")
+	var calls []hookCall
+	var f fixture
+	opts := admin.Options{
+		Seeder:  &fakeSeeder{},
+		OnReset: recordHook(&f, &calls, boom),
+	}
+	f = newFixture(t, testDialect{}, opts, slices.Concat(resetting(), applying(), current())...)
+	tr, err := f.service.Reset(context.Background(), "default")
+	if !errors.Is(err, boom) || !strings.HasPrefix(err.Error(), "reset hook: ") {
+		t.Fatalf("Reset = %+v, %v; want the hook's error", tr, err)
+	}
+	if len(calls) != 1 || len(f.seeder.seeded) != 0 || !f.service.Ready() || f.rec.Pending() != 0 {
+		t.Errorf("hook calls %d, seeded %v, ready %v, pending %d", len(calls), f.seeder.seeded, f.service.Ready(), f.rec.Pending())
+	}
+}
+
+// Only Reset calls the hook: Start, Seed, and the schema verbs each run
+// to completion without it.
+func TestOnReset_OtherVerbsNeverCallIt(t *testing.T) {
+	one := history([]driver.Value{int64(1), "a", false})
+	responses := slices.Concat(
+		clean(),               // Start
+		current(),             // Status
+		applying(), current(), // Up
+		[]sqltest.Response{locked, created, applied(), {}, {}, {}, unlocked, exists(true), one}, // Down 1
+		[]sqltest.Response{locked, created, history(), {}, {}, unlocked, exists(true), one},     // Steps +1
+		[]sqltest.Response{locked, {}, {}, {Affected: 1}, unlocked, exists(true), one},          // Force 1
+	)
+	var calls int
+	opts := admin.Options{
+		Seed:    "default",
+		Seeder:  &fakeSeeder{},
+		OnReset: func(context.Context, string) error { calls++; return nil },
+	}
+	f := newFixture(t, testDialect{}, opts, responses...)
+	ctx := context.Background()
+	verbs := []struct {
+		name string
+		run  func() error
+	}{
+		{"Start", func() error { return f.service.Start(ctx) }},
+		{"Seed", func() error { _, err := f.service.Seed(ctx, "default"); return err }},
+		{"Status", func() error { _, err := f.service.Status(ctx); return err }},
+		{"Up", func() error { _, err := f.service.Up(ctx); return err }},
+		{"Down", func() error { _, err := f.service.Down(ctx, "app", 1); return err }},
+		{"Steps", func() error { _, err := f.service.Steps(ctx, "app", 1); return err }},
+		{"Force", func() error { _, err := f.service.Force(ctx, "app", 1); return err }},
+	}
+	for _, v := range verbs {
+		if err := v.run(); err != nil {
+			t.Fatalf("%s: %v", v.name, err)
+		}
+		if calls != 0 {
+			t.Fatalf("%s called the hook %d times", v.name, calls)
+		}
+	}
+	if f.rec.Pending() != 0 {
+		t.Errorf("pending responses = %d", f.rec.Pending())
 	}
 }

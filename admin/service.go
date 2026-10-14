@@ -86,6 +86,14 @@ type Options struct {
 
 	// Logger receives the startup narrative. nil is silent.
 	Logger *slog.Logger
+
+	// OnReset runs once in each Reset, after every set is applied and
+	// before the state's seed set, with the state Reset resolved. It is the
+	// consumer's step for what the schema alone does not restore, such as
+	// state held outside the database. An error stops Reset before the
+	// seed, leaving the schema applied and unseeded. Start, Seed, and the
+	// schema verbs never call it. nil skips the step.
+	OnReset func(ctx context.Context, state string) error
 }
 
 // Service is the database admin service.
@@ -98,6 +106,7 @@ type Service struct {
 	registry Registry
 	logger   *slog.Logger
 	seed     string
+	onReset  func(context.Context, string) error
 	ready    atomic.Bool
 	started  atomic.Bool
 
@@ -139,7 +148,7 @@ func New(pool *database.DB, db *sqlate.DB, m *migrate.Migrator, c *query.Catalog
 	s := &Service{
 		pool: pool, db: db, migrator: m, catalog: c,
 		seeder: opts.Seeder, registry: opts.Registry, logger: logger, seed: opts.Seed,
-		probe: m.Verify, base: time.Now(),
+		onReset: opts.OnReset, probe: m.Verify, base: time.Now(),
 	}
 	s.probed.Store(int64(-reverifyInterval)) // the first probe is not throttled
 	return s
@@ -263,10 +272,13 @@ func (s *Service) Seed(ctx context.Context, state string) (Seeded, error) {
 	return s.seeder.Seed(ctx, state)
 }
 
-// Reset reverts every set, applies every set, and applies the named state's
-// seed set, or the configured one when state is empty. The revert and the
-// apply each hold the migrator's lock; the seed runs outside it. A failure
-// leaves the schema where its step stopped.
+// Reset reverts every set, applies every set, runs [Options.OnReset] when
+// one is set, and applies the named state's seed set, or the configured one
+// when state is empty. The revert drops everything the consumer's sets
+// hold, an outbox's unpublished rows included. The revert and the apply
+// each hold the migrator's lock; the hook and the seed run outside it. A
+// failure leaves the schema where its step stopped, and the error names
+// the step: revert, apply, reset hook, or seed.
 func (s *Service) Reset(ctx context.Context, state string) (Transition, error) {
 	state, err := s.state(state)
 	if err != nil {
@@ -279,6 +291,12 @@ func (s *Service) Reset(ctx context.Context, state string) (Transition, error) {
 	if err := s.migrator.Up(ctx); err != nil {
 		_, err = s.after(ctx, fmt.Errorf("apply: %w", conflict(err)))
 		return Transition{}, err
+	}
+	if s.onReset != nil {
+		if err := s.onReset(ctx, state); err != nil {
+			_, err = s.after(ctx, fmt.Errorf("reset hook: %w", err))
+			return Transition{}, err
+		}
 	}
 	n, err := s.seeder.Seed(ctx, state)
 	if err != nil {
