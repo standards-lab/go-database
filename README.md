@@ -1,14 +1,15 @@
 # go-database
 
 go-database is an SQL infrastructure library for Standards Lab's Go Elemental standard. It
-holds three things:
+holds four things:
 
 - the connection pool, with its configuration, lifecycle, and readiness
 - the database admin service, built over the `sqlate` library
+- the sweeper, which runs a service's reclaimers
 - the Postgres provider
 
 `github.com/standards-lab/go-database` is the base module, holding the `database` package at its
-root and `admin` beside it. `github.com/standards-lab/go-database/postgres` is a nested sub-module
+root and `admin` and `sweep` beside it. `github.com/standards-lab/go-database/postgres` is a nested sub-module
 that pins the driver and is released on its own tags.
 
 ## Standard
@@ -37,6 +38,10 @@ principles:
   and diagnostics, run at startup and on demand as operations over `sqlate`'s functions. One
   service administers every migration set its migrator runs: status and reset cover them all,
   and the verbs that target one set, including `force` for dirty-set repair, take its name.
+- `sweep` runs a service's reclaimers, the bounded passes its libraries' garbage is removed in,
+  as one go-core reactor: each on its own interval or when nudged by name, under a per-reclaimer
+  advisory lock so one replica reclaims at a time, and paused under the service's quiesce gate.
+  It imports no reclaimer; blobfs's sweep and go-messaging's retention satisfy its interface.
 - `postgres` is the PostgreSQL provider: it constructs the pool over pgx's `database/sql` adapter
   from the configuration block.
 
