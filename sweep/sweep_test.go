@@ -3,6 +3,7 @@ package sweep_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"log/slog"
@@ -115,6 +116,7 @@ func (l *logs) logger() *slog.Logger { return slog.New(slog.NewTextHandler(l, ni
 // fixture is a sweeper over a scripted locking pool.
 type fixture struct {
 	s    *sweep.Sweeper
+	pool *sql.DB
 	rec  *sqltest.Recorder
 	logs *logs
 }
@@ -131,7 +133,7 @@ func newFixture(t *testing.T, dialect sqlate.Dialect, regs []sweep.Registration,
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	return fixture{s: s, rec: rec, logs: l}
+	return fixture{s: s, pool: pool, rec: rec, logs: l}
 }
 
 // locks returns the lock statements recorded, each with its lock's name.
@@ -261,14 +263,27 @@ func TestNew_WiringDefectsPanic(t *testing.T) {
 	}
 }
 
-func TestNew_TicksAtTheSmallestInterval(t *testing.T) {
+func TestHandle_TicksAtTheSmallestInterval(t *testing.T) {
+	// The tick is the smallest interval, 1m, so a reclaimer is due half a
+	// tick, 30s, before its own interval has passed: slow's 5m makes it due
+	// from 4m30s. A tick of the largest interval would make it due from
+	// 4m-30m, and one of the middle interval from 2m30s.
+	var order []string
+	slow := &reclaimer{name: "slow", log: &order}
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{
-		reg("a", &reclaimer{}, 5*time.Minute, 1),
-		reg("b", &reclaimer{}, time.Minute, 1),
-		reg("c", &reclaimer{}, time.Hour, 1),
-	}, time.Second)
-	if got := sweep.Tick(f.s); got != time.Minute {
-		t.Errorf("tick = %v, want 1m", got)
+		reg("slow", slow, 5*time.Minute, 1),
+		reg("fast", &reclaimer{}, time.Minute, 1),
+		reg("rare", &reclaimer{}, time.Hour, 1),
+	}, time.Second, sweep.Unlocked())
+	handle := sweep.Handle(f.s)
+
+	for _, at := range []time.Duration{0, 4*time.Minute + 29*time.Second, 4*time.Minute + 31*time.Second} {
+		if err := handle(context.Background(), t0.Add(at)); err != nil {
+			t.Fatalf("handle at %v: %v", at, err)
+		}
+	}
+	if want := []string{"pass slow", "pass slow"}; !slices.Equal(order, want) {
+		t.Errorf("slow's passes = %q, want %q: due at start and from 4m30s", order, want)
 	}
 }
 
@@ -289,6 +304,9 @@ func TestHandle_ClaimsTheLockAndPassesAtTheBudget(t *testing.T) {
 		t.Errorf("reports = %+v, want one finished pass of files", got)
 	}
 	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
+	if st := f.pool.Stats(); st.OpenConnections != 1 || st.Idle != 1 {
+		t.Errorf("pool = %d open, %d idle; want the released connection pooled", st.OpenConnections, st.Idle)
+	}
 }
 
 func TestHandle_ALockHeldElsewhereRunsNoPassAndReportsNothing(t *testing.T) {
@@ -534,6 +552,9 @@ func TestHandle_AFailedReleaseIsLogged(t *testing.T) {
 		t.Errorf("log = %q, want the release failure", out)
 	}
 	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
+	if st := f.pool.Stats(); st.OpenConnections != 0 {
+		t.Errorf("pool = %d open; want the connection whose unlock failed discarded", st.OpenConnections)
+	}
 }
 
 func TestHandle_AnEndedContextReturnsItsErrorAndReleasesTheClaim(t *testing.T) {
