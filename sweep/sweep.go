@@ -285,7 +285,8 @@ func (s *Sweeper) due(reg Registration, now time.Time) bool {
 	return true
 }
 
-// cycle claims reg's lock and runs its passes while one reports more. A
+// cycle claims reg's lock and runs its passes while one reports more,
+// whatever its error, which is reported and never ends the cycle. A
 // lock held elsewhere runs no pass and reports nothing; a failure to claim
 // it is logged at warn and leaves the work to the next cycle. The claim is
 // released when the cycle ends, on every path. It returns ctx's error once
@@ -315,7 +316,10 @@ func (s *Sweeper) cycle(ctx context.Context, drain <-chan struct{}, reg Registra
 			return nil
 		}
 		s.opts.hook(ctx, p)
-		if p.Err != nil || !p.More {
+		// more alone decides: a failed pass that reports more is followed
+		// by another, since a reclaimer's passes are idempotent. A gate
+		// failure ran no pass, so it reports no more and ends the cycle.
+		if !p.More {
 			return nil
 		}
 	}

@@ -40,8 +40,10 @@
 // pinned connection with sqlate.TryLocker. A lock another process holds
 // runs no pass and reports nothing: that process is reclaiming. Once
 // claimed, the cycle passes at the policy's budget while a pass reports
-// more, reporting each pass. A pass's error ends the cycle, and the next
-// interval retries; it never ends the reactor. The claim is released when
+// more, reporting each pass. A pass's error is reported and ends neither
+// the cycle nor the reactor: the cycle goes on while the pass reported
+// more, and a pass that reported none ends it, error or not. The claim is
+// released when
 // the cycle ends, on every path: unlocked, then the connection closed. A
 // failure to claim or to release the lock is logged at warn, and a
 // connection whose unlock failed is discarded rather than pooled, so the

@@ -331,10 +331,30 @@ func TestHandle_PassesWhileMoreUnderOneClaim(t *testing.T) {
 	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
 }
 
-func TestHandle_APassErrorEndsTheCycleAndTheNextIntervalRetries(t *testing.T) {
+func TestHandle_AFailedPassThatReportsMoreIsFollowedByAnother(t *testing.T) {
 	boom := errors.New("boom")
 	var p passes
 	r := &reclaimer{results: []result{{more: true, err: boom}, {more: false}}}
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.OnPass(p.hook))
+	f.rec.Queue(claimed()...)
+
+	if err := sweep.Handle(f.s)(context.Background(), t0); err != nil {
+		t.Fatalf("handle returned the pass's error: %v", err)
+	}
+	if r.passes() != 2 {
+		t.Fatalf("passes = %d, want the failed pass's more to run a second", r.passes())
+	}
+	got := p.all()
+	if len(got) != 2 || !errors.Is(got[0].Err, boom) || !got[0].More || got[1].Err != nil || got[1].More {
+		t.Errorf("reports = %+v, want the failed pass with its more, then the finished one", got)
+	}
+	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
+}
+
+func TestHandle_AFailedPassWithoutMoreEndsTheCycleAndTheNextIntervalRetries(t *testing.T) {
+	boom := errors.New("boom")
+	var p passes
+	r := &reclaimer{results: []result{{more: false, err: boom}, {more: true}, {more: false}}}
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.OnPass(p.hook))
 	f.rec.Queue(claimed()...)
 	handle := sweep.Handle(f.s)
@@ -343,10 +363,10 @@ func TestHandle_APassErrorEndsTheCycleAndTheNextIntervalRetries(t *testing.T) {
 		t.Fatalf("handle returned the pass's error: %v", err)
 	}
 	if r.passes() != 1 {
-		t.Fatalf("passes = %d, want the cycle to end after the failed pass", r.passes())
+		t.Fatalf("passes = %d, want the cycle to end after a pass without more", r.passes())
 	}
-	if got := p.all(); len(got) != 1 || !errors.Is(got[0].Err, boom) || !got[0].More {
-		t.Errorf("reports = %+v, want the failed pass with its more", got)
+	if got := p.all(); len(got) != 1 || !errors.Is(got[0].Err, boom) || got[0].More {
+		t.Errorf("reports = %+v, want the failed pass", got)
 	}
 	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
 
@@ -354,8 +374,8 @@ func TestHandle_APassErrorEndsTheCycleAndTheNextIntervalRetries(t *testing.T) {
 	if err := handle(context.Background(), t0.Add(time.Minute)); err != nil {
 		t.Fatalf("second handle: %v", err)
 	}
-	if r.passes() != 2 {
-		t.Errorf("passes = %d, want the next interval to retry", r.passes())
+	if r.passes() != 3 {
+		t.Errorf("passes = %d, want the next interval to run a cycle of two", r.passes())
 	}
 }
 
