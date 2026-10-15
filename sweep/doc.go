@@ -42,12 +42,14 @@
 // claimed, the cycle passes at the policy's budget while a pass reports
 // more, reporting each pass. A pass's error is reported and ends neither
 // the cycle nor the reactor: the cycle goes on while the pass reported
-// more, and a pass that reported none ends it, error or not. The claim is
-// released when
-// the cycle ends, on every path: unlocked, then the connection closed. A
-// failure to claim or to release the lock is logged at warn, and a
-// connection whose unlock failed is discarded rather than pooled, so the
-// session's end releases the lock.
+// more, and a pass that reported none ends it, error or not. Nothing else
+// bounds a cycle but the drain, so a reclaimer that reports more on every
+// pass, failing or not, holds the reactor, and every reclaimer after it in
+// the list, until the drain. The claim is released when the cycle ends, on
+// every path: unlocked, then the connection closed. A failure to claim or
+// to release the lock is logged at warn, and a connection whose unlock
+// failed is discarded rather than pooled, so the session's end releases
+// the lock.
 //
 // # Drain
 //

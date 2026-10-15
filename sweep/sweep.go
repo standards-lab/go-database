@@ -16,8 +16,12 @@ import (
 // Reclaimer is one library's bounded reclaim: a pass removes at most budget
 // units of its garbage and reports whether more may remain. A pass is
 // idempotent and finds its work in the database, so a pass that fails is
-// retried by a later cycle. blobfs's sweep and go-messaging's retention
-// satisfy it structurally; this package imports neither.
+// retried by a later cycle. A pass that reports more is followed by
+// another in the same cycle, whether or not it failed, so a reclaimer
+// reports more only while a further pass can make progress: one that
+// reports more on every pass holds the sweeper until its drain. blobfs's
+// sweep and go-messaging's retention satisfy it structurally; this package
+// imports neither.
 type Reclaimer interface {
 	Pass(ctx context.Context, budget int) (more bool, err error)
 }

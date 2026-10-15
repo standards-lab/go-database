@@ -9,8 +9,8 @@ holds four things:
 - the Postgres provider
 
 `github.com/standards-lab/go-database` is the base module, holding the `database` package at its
-root and `admin` and `sweep` beside it. `github.com/standards-lab/go-database/postgres` is a nested sub-module
-that pins the driver and is released on its own tags.
+root and `admin` and `sweep` beside it. `github.com/standards-lab/go-database/postgres` is a
+nested sub-module that pins the driver and is released on its own tags.
 
 ## Standard
 
