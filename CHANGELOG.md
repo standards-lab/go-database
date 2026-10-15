@@ -7,6 +7,33 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.10.0] - 2026-10-15
+
+### Added
+
+- The `sweep` package: `sweep.Sweeper` runs a service's reclaimers as one go-core reactor.
+  `sweep.Reclaimer` is `Pass(ctx, budget) (more bool, err error)`, which go-messaging's
+  retention satisfies structurally, as does an adapter over blobfs's sweep.
+  `sweep.New(db, regs, shutdown, logger, opts...)` takes the explicit list of `sweep.Registration`s, each a name, a reclaimer, and a
+  `sweep.Policy` (interval, budget), and refuses an empty list, an empty or repeated name, a nil
+  reclaimer, a non-positive interval, budget, or shutdown, and a dialect without
+  `sqlate.TryLocker` (`sweep.ErrNoTryLocker`) unless `sweep.Unlocked()`, before any I/O. The
+  reactor ticks at the smallest interval; each delivery runs every reclaimer due by its interval
+  or nudged by name with `Sweeper.Nudge`, and every reclaimer at start. A cycle claims the
+  advisory lock `sweep.<name>` without waiting, runs no pass when another process holds it, and
+  otherwise passes at the budget while a pass reports more, whether or not it failed; a pass's
+  error is reported and ends neither the cycle nor the reactor. A cycle runs for at most its
+  reclaimer's interval, then yields to the other due reclaimers and stays due, so a backlog
+  drains interleaved with them. `sweep.Gated` holds a gate shared for each pass, `sweep.OnPass`
+  sets the hook each `sweep.Pass` is reported to (by default a failed pass is logged at warn),
+  and the drain starts no further pass. `Sweeper` is a lifecycle Starter, Stopper,
+  ReadinessChecker, and Monitored through its reactor.
+
+### Changed
+
+- The `sqlate` requirement is v0.6.0, which adds the `sqlate.TryLocker` dialect capability and
+  `sqltest.LockingDialect`, its scriptable stub.
+
 ## [v0.9.0] - 2026-10-14
 
 ### Added
@@ -297,7 +324,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.10.0...HEAD
+[v0.10.0]: https://github.com/standards-lab/go-database/compare/v0.9.0...v0.10.0
 [v0.9.0]: https://github.com/standards-lab/go-database/compare/v0.8.0...v0.9.0
 [v0.8.0]: https://github.com/standards-lab/go-database/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/standards-lab/go-database/compare/v0.6.2...v0.7.0
