@@ -7,12 +7,14 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.10.0] - 2026-10-15
+
 ### Added
 
 - The `sweep` package: `sweep.Sweeper` runs a service's reclaimers as one go-core reactor.
-  `sweep.Reclaimer` is `Pass(ctx, budget) (more bool, err error)`, which blobfs's sweep and
-  go-messaging's retention satisfy structurally. `sweep.New(db, regs, shutdown, logger, opts...)`
-  takes the explicit list of `sweep.Registration`s, each a name, a reclaimer, and a
+  `sweep.Reclaimer` is `Pass(ctx, budget) (more bool, err error)`, which go-messaging's
+  retention satisfies structurally, as does an adapter over blobfs's sweep.
+  `sweep.New(db, regs, shutdown, logger, opts...)` takes the explicit list of `sweep.Registration`s, each a name, a reclaimer, and a
   `sweep.Policy` (interval, budget), and refuses an empty list, an empty or repeated name, a nil
   reclaimer, a non-positive interval, budget, or shutdown, and a dialect without
   `sqlate.TryLocker` (`sweep.ErrNoTryLocker`) unless `sweep.Unlocked()`, before any I/O. The
@@ -322,7 +324,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.10.0...HEAD
+[v0.10.0]: https://github.com/standards-lab/go-database/compare/v0.9.0...v0.10.0
 [v0.9.0]: https://github.com/standards-lab/go-database/compare/v0.8.0...v0.9.0
 [v0.8.0]: https://github.com/standards-lab/go-database/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/standards-lab/go-database/compare/v0.6.2...v0.7.0
