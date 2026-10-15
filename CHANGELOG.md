@@ -7,6 +7,24 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.9.0] - 2026-10-14
+
+### Added
+
+- `admin.Options.OnReset`, a `func(ctx context.Context, state string) error` hook that
+  `Service.Reset` calls once, after every set is applied and before the state's seed set, with
+  the state it resolved. A hook error stops the reset before the seed, as `reset hook: <err>`,
+  leaving the schema applied and unseeded. Start, Seed, and the schema verbs never call it, and
+  a nil hook leaves Reset as it was. `Service.Reset` states that its revert drops everything the
+  consumer's sets hold, an outbox's unpublished rows included.
+
+### Changed
+
+- **Breaking:** The `go-core` requirement is v0.10.0. An importer whose graph holds a value with
+  `Ready() bool` and no `Start` loses that value's readiness check, since the requirement pulls
+  go-core v0.8.0's narrower `Coordinator.Checks` into its build. `*database.DB` and
+  `*admin.Service` have `Start`, so their checks remain.
+
 ## [v0.8.0] - 2026-10-09
 
 ### Changed
@@ -279,7 +297,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.9.0...HEAD
+[v0.9.0]: https://github.com/standards-lab/go-database/compare/v0.8.0...v0.9.0
 [v0.8.0]: https://github.com/standards-lab/go-database/compare/v0.7.0...v0.8.0
 [v0.7.0]: https://github.com/standards-lab/go-database/compare/v0.6.2...v0.7.0
 [v0.6.2]: https://github.com/standards-lab/go-database/compare/v0.6.1...v0.6.2
