@@ -382,11 +382,10 @@ func endless(name string, log *[]string, c *clock, step time.Duration) *reclaime
 }
 
 func TestHandle_ACycleYieldsAtItsIntervalAndStaysDue(t *testing.T) {
-	var order []string
 	c := &clock{t: t0}
 	// Each pass takes 20s of a 1m interval, so the cycle yields after the
 	// third, still reporting more.
-	r := endless("files", &order, c, 20*time.Second)
+	r := endless("files", nil, c, 20*time.Second)
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second)
 	sweep.SetClock(f.s, c.now)
 	handle := sweep.Handle(f.s)
@@ -432,6 +431,32 @@ func TestHandle_AYieldingCycleLetsTheReclaimersAfterItRun(t *testing.T) {
 		t.Errorf("passes = %q, want %q: a yields at its interval and b runs after it", order, want)
 	}
 	wantLocks(t, f.rec, try+"sweep.a", unlock+"sweep.a", try+"sweep.b", unlock+"sweep.b")
+}
+
+func TestHandle_ACycleWhoseLastPassReportsNoMoreIsNotLeftDue(t *testing.T) {
+	c := &clock{t: t0}
+	// The one pass outlasts the 1m interval but reports no more, so the
+	// cycle ends rather than yields, and the reclaimer waits out its
+	// interval.
+	r := &reclaimer{block: func(context.Context) error {
+		c.advance(2 * time.Minute)
+		return nil
+	}}
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second)
+	sweep.SetClock(f.s, c.now)
+	handle := sweep.Handle(f.s)
+
+	f.rec.Queue(claimed()...)
+	if err := handle(context.Background(), t0); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if err := handle(context.Background(), t0.Add(time.Second)); err != nil {
+		t.Fatalf("second handle: %v", err)
+	}
+	if r.passes() != 1 {
+		t.Errorf("passes = %d, want 1: a cycle that ran out of work is not left due", r.passes())
+	}
+	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
 }
 
 func TestHandle_AFailedPassThatReportsMoreIsFollowedByAnother(t *testing.T) {
