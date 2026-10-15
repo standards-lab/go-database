@@ -7,6 +7,13 @@ changelog covers this sub-module only; the base module keeps its own.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** The `go-database` requirement is v0.9.0, which requires `go-core` v0.10.0. An
+  importer whose graph holds a value with `Ready() bool` and no `Start` loses that value's
+  readiness check, since the requirement pulls go-core v0.8.0's narrower `Coordinator.Checks`
+  into its build.
+
 ## [v0.5.0] - 2026-10-09
 
 ### Changed
