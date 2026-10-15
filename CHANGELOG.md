@@ -7,6 +7,11 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+### Changed
+
+- The `sqlate` requirement is v0.6.0, which adds the `sqlate.TryLocker` dialect capability and
+  `sqltest.LockingDialect`, its scriptable stub.
+
 ## [v0.9.0] - 2026-10-14
 
 ### Added
