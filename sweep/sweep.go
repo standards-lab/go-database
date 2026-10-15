@@ -233,6 +233,12 @@ func (s *Sweeper) Nudge(name string) {
 	if !s.names[name] {
 		panic(fmt.Sprintf("sweep: Nudge of unregistered reclaimer %q", name))
 	}
+	s.nudge(name)
+}
+
+// nudge is [Sweeper.Nudge] for a name known to be registered: it marks
+// name due and asks the reactor for a delivery.
+func (s *Sweeper) nudge(name string) {
 	s.mu.Lock()
 	s.nudged[name] = true
 	s.mu.Unlock()
@@ -301,11 +307,11 @@ func (s *Sweeper) due(reg Registration, now time.Time) bool {
 // most reg's interval from the claim. A cycle still reporting more once
 // the interval has passed yields: it marks reg nudged, as [Sweeper.Nudge]
 // does, so reg stays due and the delivery that nudge earns resumes its
-// backlog without waiting out an interval. A
-// lock held elsewhere runs no pass and reports nothing; a failure to claim
-// it is logged at warn and leaves the work to the next cycle. The claim is
-// released when the cycle ends, on every path. It returns ctx's error once
-// ctx ends, and nil otherwise.
+// backlog without waiting out an interval. A lock held elsewhere runs no
+// pass and reports nothing; a failure to claim it is logged at warn and
+// leaves the work to the next cycle. The claim is released when the cycle
+// ends, on every path. It returns ctx's error once ctx ends, and nil
+// otherwise.
 func (s *Sweeper) cycle(ctx context.Context, drain <-chan struct{}, reg Registration) error {
 	if s.locker != nil {
 		release, claimed, err := s.claim(ctx, reg.Name)
@@ -339,19 +345,12 @@ func (s *Sweeper) cycle(ctx context.Context, drain <-chan struct{}, reg Registra
 			return nil
 		}
 		if s.now().Sub(start) >= reg.Policy.Interval {
-			s.yield(reg.Name)
+			// Yield: reg stays due, and the delivery the nudge earns
+			// resumes its backlog after the reclaimers behind it.
+			s.nudge(reg.Name)
 			return nil
 		}
 	}
-}
-
-// yield leaves name due after a cycle the interval bound ended, and asks
-// the reactor for another delivery, as [Sweeper.Nudge] does.
-func (s *Sweeper) yield(name string) {
-	s.mu.Lock()
-	s.nudged[name] = true
-	s.mu.Unlock()
-	s.wake.Nudge()
 }
 
 // claim pins a connection and tries the lock "sweep.<name>" on it. It

@@ -51,10 +51,10 @@
 // progress still costs passes back to back for that interval, which is why
 // a reclaimer reports more only while a further pass can make progress.
 // The drain ends a cycle sooner. The claim is released when the cycle
-// ends, on every path: unlocked, then the connection closed. A failure to claim or
-// to release the lock is logged at warn, and a connection whose unlock
-// failed is discarded rather than pooled, so the session's end releases
-// the lock.
+// ends, on every path: unlocked, then the connection closed. A failure to
+// claim or to release the lock is logged at warn, and a connection whose
+// unlock failed is discarded rather than pooled, so the session's end
+// releases the lock.
 //
 // # Drain
 //
