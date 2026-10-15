@@ -9,3 +9,7 @@ import (
 // Handle returns the Func the sweeper's reactor runs, so a test delivers
 // occurrences at the times it chooses, without the source's clock.
 func Handle(s *Sweeper) reactor.Func[time.Time] { return s.handle }
+
+// SetClock replaces the clock that bounds a sweeper's cycles, so a test
+// moves time past an interval without sleeping.
+func SetClock(s *Sweeper, now func() time.Time) { s.now = now }

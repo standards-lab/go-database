@@ -20,8 +20,9 @@ only; the `postgres` sub-module keeps its own.
   or nudged by name with `Sweeper.Nudge`, and every reclaimer at start. A cycle claims the
   advisory lock `sweep.<name>` without waiting, runs no pass when another process holds it, and
   otherwise passes at the budget while a pass reports more, whether or not it failed; a pass's
-  error is reported and ends neither the cycle nor the reactor, so a reclaimer that reports more
-  on every pass holds the reactor until the drain. `sweep.Gated` holds a gate shared for each
+  error is reported and ends neither the cycle nor the reactor. A cycle runs for at most its
+  reclaimer's interval, then yields to the other due reclaimers and stays due, so a backlog
+  drains interleaved with them. `sweep.Gated` holds a gate shared for each
   pass, `sweep.OnPass` sets the hook each `sweep.Pass` is reported to (by default a failed pass
   is logged at warn), and the drain starts no further pass. `Sweeper` is a lifecycle Starter,
   Stopper, ReadinessChecker, and Monitored through its reactor.

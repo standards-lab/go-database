@@ -349,6 +349,91 @@ func TestHandle_PassesWhileMoreUnderOneClaim(t *testing.T) {
 	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
 }
 
+// clock is a fake clock for a sweeper's cycle bound, which a reclaimer's
+// pass advances so a cycle runs past its interval without sleeping.
+type clock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *clock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *clock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+// endless is a reclaimer that reports more on every pass, each pass
+// advancing c by step.
+func endless(name string, log *[]string, c *clock, step time.Duration) *reclaimer {
+	results := make([]result, 100)
+	for i := range results {
+		results[i].more = true
+	}
+	return &reclaimer{name: name, log: log, results: results, block: func(context.Context) error {
+		c.advance(step)
+		return nil
+	}}
+}
+
+func TestHandle_ACycleYieldsAtItsIntervalAndStaysDue(t *testing.T) {
+	var order []string
+	c := &clock{t: t0}
+	// Each pass takes 20s of a 1m interval, so the cycle yields after the
+	// third, still reporting more.
+	r := endless("files", &order, c, 20*time.Second)
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second)
+	sweep.SetClock(f.s, c.now)
+	handle := sweep.Handle(f.s)
+
+	f.rec.Queue(claimed()...)
+	if err := handle(context.Background(), t0); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if r.passes() != 3 {
+		t.Fatalf("passes = %d, want the cycle to end at its interval, after 3", r.passes())
+	}
+	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
+
+	// The next delivery, a second later and well inside the interval, runs
+	// the yielded reclaimer again.
+	f.rec.Queue(claimed()...)
+	if err := handle(context.Background(), t0.Add(time.Second)); err != nil {
+		t.Fatalf("second handle: %v", err)
+	}
+	if r.passes() != 6 {
+		t.Errorf("passes = %d, want the yielded reclaimer due again for 3 more", r.passes())
+	}
+	wantLocks(t, f.rec,
+		try+"sweep.files", unlock+"sweep.files", try+"sweep.files", unlock+"sweep.files")
+}
+
+func TestHandle_AYieldingCycleLetsTheReclaimersAfterItRun(t *testing.T) {
+	var order []string
+	c := &clock{t: t0}
+	a := endless("a", &order, c, 30*time.Second)
+	b := &reclaimer{name: "b", log: &order}
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{
+		reg("a", a, time.Minute, 1),
+		reg("b", b, time.Minute, 1),
+	}, time.Second)
+	sweep.SetClock(f.s, c.now)
+	f.rec.Queue(append(claimed(), claimed()...)...)
+
+	if err := sweep.Handle(f.s)(context.Background(), t0); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if want := []string{"pass a", "pass a", "pass b"}; !slices.Equal(order, want) {
+		t.Errorf("passes = %q, want %q: a yields at its interval and b runs after it", order, want)
+	}
+	wantLocks(t, f.rec, try+"sweep.a", unlock+"sweep.a", try+"sweep.b", unlock+"sweep.b")
+}
+
 func TestHandle_AFailedPassThatReportsMoreIsFollowedByAnother(t *testing.T) {
 	boom := errors.New("boom")
 	var p passes
@@ -697,6 +782,31 @@ func TestSweeper_EveryReclaimerIsDueAtStart(t *testing.T) {
 	if f.s.Ready() {
 		t.Error("Ready after Shutdown")
 	}
+}
+
+func TestSweeper_AYieldingCycleNudgesTheReactor(t *testing.T) {
+	// The interval is an hour, so a second delivery that comes at all comes
+	// from the yield's nudge, not a tick.
+	c := &clock{t: t0}
+	ran := make(chan struct{}, 2)
+	r := &reclaimer{results: []result{{more: true}}, block: func(context.Context) error {
+		c.advance(time.Hour)
+		ran <- struct{}{}
+		return nil
+	}}
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Hour, 1)}, time.Second)
+	sweep.SetClock(f.s, c.now)
+	f.rec.Queue(append(claimed(), claimed()...)...)
+	if err := f.s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	await(t, ran, "the first pass")
+	await(t, ran, "the pass the yield's delivery runs")
+	if err := shutdown(f.s); err != nil {
+		t.Errorf("Shutdown: %v", err)
+	}
+	wantLocks(t, f.rec,
+		try+"sweep.files", unlock+"sweep.files", try+"sweep.files", unlock+"sweep.files")
 }
 
 func TestSweeper_TheDrainStartsNoFurtherPassAndLetsTheOneInFlightFinish(t *testing.T) {

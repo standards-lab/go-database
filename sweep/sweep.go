@@ -17,9 +17,11 @@ import (
 // units of its garbage and reports whether more may remain. A pass is
 // idempotent and finds its work in the database, so a pass that fails is
 // retried by a later cycle. A pass that reports more is followed by
-// another in the same cycle, whether or not it failed, so a reclaimer
-// reports more only while a further pass can make progress: one that
-// reports more on every pass holds the sweeper until its drain. blobfs's
+// another in the same cycle, whether or not it failed, until the cycle has
+// run for its interval, when the reclaimer yields to the others due and
+// stays due. A reclaimer therefore reports more only while a further pass
+// can make progress: one that reports more on every pass spends each of
+// its cycles, an interval at a time, on passes that remove nothing. blobfs's
 // sweep and go-messaging's retention satisfy it structurally; this package
 // imports neither.
 type Reclaimer interface {
@@ -145,6 +147,7 @@ type Sweeper struct {
 	logger *slog.Logger
 	wake   *reactor.Waker
 	r      *reactor.Reactor[time.Time]
+	now    func() time.Time // the clock that bounds a cycle; time.Now outside tests
 
 	// mu guards the due state: each reclaimer's last cycle, by its
 	// delivery's time, and the reclaimers nudged since their last cycle.
@@ -182,6 +185,7 @@ func New(db *sqlate.DB, regs []Registration, shutdown time.Duration, logger *slo
 		regs:   append([]Registration(nil), regs...),
 		names:  make(map[string]bool, len(regs)),
 		logger: logger,
+		now:    time.Now,
 		last:   make(map[string]time.Time, len(regs)),
 		nudged: make(map[string]bool, len(regs)),
 	}
@@ -250,7 +254,10 @@ func (s *Sweeper) Ready() bool { return s.r.Ready() }
 func (s *Sweeper) Err() <-chan error { return s.r.Err() }
 
 // handle is the reactor's Func: it runs the cycle of each reclaimer due at
-// now, in the list's order, until the drain begins. It returns an error
+// now, in the list's order, until the drain begins. A cycle that yields
+// leaves its reclaimer due and the waker nudged, so the reclaimers after it
+// run in this delivery and every due reclaimer runs again, in order, in the
+// next: each gets at most one interval in turn. It returns an error
 // only when ctx ends, which is the drain's cancellation, so that error is
 // the reactor's; every other failure is reported and left to the next
 // cycle, and the reactor continues.
@@ -290,7 +297,11 @@ func (s *Sweeper) due(reg Registration, now time.Time) bool {
 }
 
 // cycle claims reg's lock and runs its passes while one reports more,
-// whatever its error, which is reported and never ends the cycle. A
+// whatever its error, which is reported and never ends the cycle, for at
+// most reg's interval from the claim. A cycle still reporting more once
+// the interval has passed yields: it marks reg nudged, as [Sweeper.Nudge]
+// does, so reg stays due and the delivery that nudge earns resumes its
+// backlog without waiting out an interval. A
 // lock held elsewhere runs no pass and reports nothing; a failure to claim
 // it is logged at warn and leaves the work to the next cycle. The claim is
 // released when the cycle ends, on every path. It returns ctx's error once
@@ -303,6 +314,7 @@ func (s *Sweeper) cycle(ctx context.Context, drain <-chan struct{}, reg Registra
 		}
 		defer release()
 	}
+	start := s.now()
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -326,7 +338,20 @@ func (s *Sweeper) cycle(ctx context.Context, drain <-chan struct{}, reg Registra
 		if !p.More {
 			return nil
 		}
+		if s.now().Sub(start) >= reg.Policy.Interval {
+			s.yield(reg.Name)
+			return nil
+		}
 	}
+}
+
+// yield leaves name due after a cycle the interval bound ended, and asks
+// the reactor for another delivery, as [Sweeper.Nudge] does.
+func (s *Sweeper) yield(name string) {
+	s.mu.Lock()
+	s.nudged[name] = true
+	s.mu.Unlock()
+	s.wake.Nudge()
 }
 
 // claim pins a connection and tries the lock "sweep.<name>" on it. It

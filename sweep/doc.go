@@ -42,11 +42,16 @@
 // claimed, the cycle passes at the policy's budget while a pass reports
 // more, reporting each pass. A pass's error is reported and ends neither
 // the cycle nor the reactor: the cycle goes on while the pass reported
-// more, and a pass that reported none ends it, error or not. Nothing else
-// bounds a cycle but the drain, so a reclaimer that reports more on every
-// pass, failing or not, holds the reactor, and every reclaimer after it in
-// the list, until the drain. The claim is released when the cycle ends, on
-// every path: unlocked, then the connection closed. A failure to claim or
+// more, and a pass that reported none ends it, error or not. A cycle runs
+// for at most its reclaimer's interval: once that has passed since the
+// claim, a cycle still reporting more yields the reactor to the other due
+// reclaimers and stays due. The next delivery, which the yield asks for,
+// runs every due reclaimer again in the list's order, so a backlog keeps
+// draining interleaved with theirs. A reclaimer that reports more without
+// progress still costs passes back to back for that interval, which is why
+// a reclaimer reports more only while a further pass can make progress.
+// The drain ends a cycle sooner. The claim is released when the cycle
+// ends, on every path: unlocked, then the connection closed. A failure to claim or
 // to release the lock is logged at warn, and a connection whose unlock
 // failed is discarded rather than pooled, so the session's end releases
 // the lock.
