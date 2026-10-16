@@ -3,7 +3,7 @@
 go-database is the SQL infrastructure library of Go Elemental, the Standards Lab
 organization's Go implementation of the Elemental Architecture. It holds the connection pool
 with its configuration, lifecycle, and readiness; the database admin service over the `sqlate`
-library; and the driver, isolated in the `postgres` provider sub-module.
+library; the general sweeper; and the driver, isolated in the `postgres` provider sub-module.
 
 The README and each package's `doc.go` document this repository. The
 [Go Elemental](https://github.com/standards-lab/architecture/blob/main/standards/go-elemental/README.md) standard states the principles it follows.
@@ -20,6 +20,9 @@ is added when it is about to be built.
   seeder, registry, catalog, and pool. `admin/doc.go` states its construction, its verbs, its
   startup sequence, its errors, and its migration sets: one service administers every set its
   migrator runs. Built.
+- **sweep** is the general sweeper: it runs a service's reclaimers as one go-core reactor, each
+  cycle under the advisory lock `sweep.<name>` and bounded by its interval. `sweep/doc.go` states
+  its construction, cycles, and drain. Built.
 - **postgres** is the PostgreSQL provider: it constructs the pool over pgx's `database/sql`
   adapter from the configuration block, and supplies no dialect — the dialect is
   `sqlate/postgres`'s. Built.
