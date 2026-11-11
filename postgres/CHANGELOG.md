@@ -12,12 +12,12 @@ changelog covers this sub-module only; the base module keeps its own.
 ### Changed
 
 - **Breaking:** The `go-database` requirement is v0.11.0, which requires `go-core` v0.11.0 and
-  pulls its graph break into an importer's build: `graph.Scope.After` is removed in favour of
-  `graph.After` at `Define`, `Observe` takes a `graph.Ref`, a node name may not contain a comma
-  or a newline, and a `Monitored` value's runtime failure ends the run as
-  `run: <node>: <error>`. It also carries go-core v0.8.0's narrower `Coordinator.Checks`, first
-  required through go-database v0.9.0: an importer whose graph holds a value with
-  `Ready() bool` and no `Start` loses that value's readiness check.
+  pulls every go-core break since v0.7.0, which postgres/v0.5.0 pulled, into an importer's
+  build: `lifecycle.Coordinator.Checks` lists a value with `Ready() bool` only when it also has
+  `Start` (v0.8.0); `graph.Scope.After` is removed in favour of `graph.After` at `Define`;
+  `Observe` takes a `graph.Ref`; a node name may not contain a comma or a newline;
+  `graph.Dependency` gains a `Ref` field, so an unkeyed literal no longer compiles; and a
+  `Monitored` value's runtime failure ends the run as `run: <node>: <error>` (v0.11.0).
 - The `pgx` requirement is v5.12.0, which fixes two high-severity vulnerabilities: SQL injection
   through `SendBatch` in the non-default simple protocol, when a queued query ends in a `--`
   comment without a newline and the next has an attacker-controlled string argument on its
