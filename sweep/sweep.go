@@ -158,12 +158,13 @@ type Sweeper struct {
 
 // New builds a Sweeper over db from the reclaimers in regs, logging to
 // logger. shutdown is the process's drain timeout: the reactor cancels a
-// pass still running at half of it ([reactor.CancelWithin]). New refuses,
-// with an error and before any I/O, an empty list; a registration with an
-// empty name, a name another uses, a nil reclaimer, or a non-positive
-// interval or budget; a non-positive shutdown; and a dialect without
-// sqlate.TryLocker, as [ErrNoTryLocker], unless [Unlocked]. A nil db or
-// logger is a wiring defect and panics.
+// pass still running at half of it ([reactor.Options.CancelAfter], set
+// by [reactor.CancelWithin]). New refuses, with an error and before any
+// I/O, an empty list; a registration with an empty name, a name another
+// uses, a nil reclaimer, or a non-positive interval or budget; a
+// non-positive shutdown; and a dialect without sqlate.TryLocker, as
+// [ErrNoTryLocker], unless [Unlocked]. A nil db or logger is a wiring
+// defect and panics.
 //
 // Every reclaimer is due at start: New nudges the source, which delivers
 // as soon as the reactor starts.
@@ -220,7 +221,7 @@ func New(db *sqlate.DB, regs []Registration, shutdown time.Duration, logger *slo
 	}
 	s.wake = reactor.Wake(s.tick)
 	s.wake.Nudge()
-	s.r = reactor.New(s.wake, s.handle, reactor.CancelWithin(shutdown))
+	s.r = reactor.New(s.wake, s.handle, reactor.Options{CancelAfter: reactor.CancelWithin(shutdown)})
 	return s, nil
 }
 
