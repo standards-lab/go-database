@@ -7,6 +7,22 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.11.0] - 2026-11-11
+
+### Changed
+
+- **Breaking:** The `go-core` requirement is v0.11.0, which pulls its graph and lifecycle break
+  into an importer's build. `graph.Scope.After` is removed: a node's order-only edges are
+  declared at `Define` with `graph.After`. `graph.Graph.Observe` takes `func(graph.Ref)` in
+  place of `func(string)`. `Define`, `Value`, `Fresh`, and `Group` panic on a node name
+  containing a comma or a newline. `graph.Dependency` gains a `Ref` field, so an unkeyed
+  `Dependency` literal no longer compiles. A `Monitored` value's runtime failure ends the run as
+  `run: <node>: <error>`, naming its node.
+- The `sqlate` requirement is v0.6.1, whose `migrate` no longer deadlocks a starter waiting for
+  the migration lock while the holder runs a non-transactional `CREATE INDEX CONCURRENTLY`.
+- The `admin` package comment orders a node after the schema service with `graph.After` on its
+  `Define` line, in place of `Scope.After`.
+
 ## [v0.10.0] - 2026-10-15
 
 ### Added
@@ -324,7 +340,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.11.0...HEAD
+[v0.11.0]: https://github.com/standards-lab/go-database/compare/v0.10.0...v0.11.0
 [v0.10.0]: https://github.com/standards-lab/go-database/compare/v0.9.0...v0.10.0
 [v0.9.0]: https://github.com/standards-lab/go-database/compare/v0.8.0...v0.9.0
 [v0.8.0]: https://github.com/standards-lab/go-database/compare/v0.7.0...v0.8.0
