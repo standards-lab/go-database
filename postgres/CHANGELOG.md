@@ -7,12 +7,25 @@ changelog covers this sub-module only; the base module keeps its own.
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-11-11
+
 ### Changed
 
-- **Breaking:** The `go-database` requirement is v0.9.0, which requires `go-core` v0.10.0. An
-  importer whose graph holds a value with `Ready() bool` and no `Start` loses that value's
-  readiness check, since the requirement pulls go-core v0.8.0's narrower `Coordinator.Checks`
-  into its build.
+- **Breaking:** The `go-database` requirement is v0.11.0, which requires `go-core` v0.11.0 and
+  pulls its graph break into an importer's build: `graph.Scope.After` is removed in favour of
+  `graph.After` at `Define`, `Observe` takes a `graph.Ref`, a node name may not contain a comma
+  or a newline, and a `Monitored` value's runtime failure ends the run as
+  `run: <node>: <error>`. It also carries go-core v0.8.0's narrower `Coordinator.Checks`, first
+  required through go-database v0.9.0: an importer whose graph holds a value with
+  `Ready() bool` and no `Start` loses that value's readiness check.
+- The `pgx` requirement is v5.12.0, which fixes two high-severity vulnerabilities: SQL injection
+  through `SendBatch` in the non-default simple protocol, when a queued query ends in a `--`
+  comment without a newline and the next has an attacker-controlled string argument on its
+  first line
+  ([GHSA-j38q-h3ph-jjpq](https://github.com/jackc/pgx/security/advisories/GHSA-j38q-h3ph-jjpq));
+  and a bypass of `require_auth` and `channel_binding=require` without `sslmode=verify-full`,
+  which let an impersonating server skip authentication
+  ([GHSA-95fj-3fxw-g62g](https://github.com/jackc/pgx/security/advisories/GHSA-95fj-3fxw-g62g)).
 
 ## [v0.5.0] - 2026-10-09
 
@@ -91,7 +104,8 @@ The first release of the PostgreSQL provider, against `github.com/standards-lab/
   classifying constraint violations arrives with the write path. `postgres.Provider` types the
   selection constant.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/v0.5.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/v0.6.0...HEAD
+[v0.6.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.5.0...postgres/v0.6.0
 [v0.5.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.4.0...postgres/v0.5.0
 [v0.4.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.3.0...postgres/v0.4.0
 [v0.3.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.2.0...postgres/v0.3.0
