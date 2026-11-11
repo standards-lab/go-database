@@ -49,7 +49,7 @@ type Registration struct {
 
 // ErrNoTryLocker reports a dialect without the sqlate.TryLocker capability,
 // which a Sweeper needs to claim each reclaimer's lock without waiting;
-// [Unlocked] opts out.
+// [Options.Unlocked] opts out.
 var ErrNoTryLocker = errors.New("sweep: dialect has no try-lock capability")
 
 // Gate is a quiesce gate each pass holds shared, so an operation that holds
@@ -68,7 +68,7 @@ type Pass struct {
 	Name string
 	// More is what the pass reported: whether more may remain.
 	More bool
-	// Err is the pass's error, or, under [Gated], the gate's failure other
+	// Err is the pass's error, or, under [Options.Gate], the gate's failure other
 	// than its wait ending, in which case no pass ran.
 	Err error
 	// Duration is how long the pass took, its wait on the gate included.
@@ -79,46 +79,27 @@ type Pass struct {
 // block for long: the sweeper waits on it before the next pass.
 type Hook func(ctx context.Context, p Pass)
 
-// Option configures a [Sweeper].
-type Option func(*options)
-
-type options struct {
-	unlocked bool
-	gate     Gate
-	hook     Hook
-}
-
-// Unlocked lets the sweeper run on a dialect without the sqlate.TryLocker
-// capability, or with it, without claiming the locks. Its intended shape is
-// a single process, or a consumer that serializes the sweep across
-// processes some other way; concurrent sweepers without one each run every
-// reclaimer, which their idempotent passes tolerate but no budget bounds.
-func Unlocked() Option {
-	return func(o *options) { o.unlocked = true }
-}
-
-// Gated sets the gate each pass holds shared, from before the pass begins
-// until it returns. Without it, or with a nil gate, passes hold none. A
-// wait on g that the reactor's drain or the handler's context ends runs no
-// pass and reports nothing. Any other failure of g is reported as the
-// pass's error, with no pass run, and ends the cycle.
-func Gated(g Gate) Option {
-	return func(o *options) {
-		if g != nil {
-			o.gate = g
-		}
-	}
-}
-
-// OnPass sets the hook each [Pass] is reported to. Without it, or with a
-// nil hook, the sweeper logs each pass that returned an error at warn on
-// its logger and nothing else.
-func OnPass(h Hook) Option {
-	return func(o *options) {
-		if h != nil {
-			o.hook = h
-		}
-	}
+// Options configures a [Sweeper]; its zero value claims each reclaimer's
+// lock, holds no gate, and logs each failed pass at warn.
+type Options struct {
+	// Unlocked runs the sweeper without claiming the reclaimers' locks, on a
+	// dialect without the sqlate.TryLocker capability or with it. Its
+	// intended shape is a single process, or a consumer that serializes the
+	// sweep across processes some other way; concurrent sweepers without
+	// one each run every reclaimer, which their idempotent passes tolerate
+	// but no budget bounds. Without it, a dialect without the capability is
+	// [ErrNoTryLocker].
+	Unlocked bool
+	// Gate, when non-nil, is held shared by each pass, from before the pass
+	// begins until it returns; when nil, passes hold none. A wait on it that
+	// the reactor's drain or the handler's context ends runs no pass and
+	// reports nothing. Any other failure of it is reported as the pass's
+	// error, with no pass run, and ends the cycle.
+	Gate Gate
+	// OnPass, when non-nil, receives each [Pass]. When nil, the sweeper logs
+	// each pass that returned an error at warn on its logger and nothing
+	// else.
+	OnPass Hook
 }
 
 // Sweeper runs a fixed list of reclaimers as one go-core reactor. Each
@@ -143,7 +124,7 @@ type Sweeper struct {
 	regs   []Registration
 	names  map[string]bool
 	tick   time.Duration
-	opts   options
+	opts   Options
 	logger *slog.Logger
 	wake   *reactor.Waker
 	r      *reactor.Reactor[time.Time]
@@ -163,12 +144,13 @@ type Sweeper struct {
 // I/O, an empty list; a registration with an empty name, a name another
 // uses, a nil reclaimer, or a non-positive interval or budget; a
 // non-positive shutdown; and a dialect without sqlate.TryLocker, as
-// [ErrNoTryLocker], unless [Unlocked]. A nil db or logger is a wiring
-// defect and panics.
+// [ErrNoTryLocker], unless opts is [Options.Unlocked]. The zero opts keeps
+// the defaults; see [Options]. A nil db or logger is a wiring defect and
+// panics.
 //
 // Every reclaimer is due at start: New nudges the source, which delivers
 // as soon as the reactor starts.
-func New(db *sqlate.DB, regs []Registration, shutdown time.Duration, logger *slog.Logger, opts ...Option) (*Sweeper, error) {
+func New(db *sqlate.DB, regs []Registration, shutdown time.Duration, logger *slog.Logger, opts Options) (*Sweeper, error) {
 	if db == nil {
 		panic("sweep: nil db")
 	}
@@ -185,14 +167,14 @@ func New(db *sqlate.DB, regs []Registration, shutdown time.Duration, logger *slo
 		db:     db,
 		regs:   append([]Registration(nil), regs...),
 		names:  make(map[string]bool, len(regs)),
+		opts:   opts,
 		logger: logger,
 		now:    time.Now,
 		last:   make(map[string]time.Time, len(regs)),
 		nudged: make(map[string]bool, len(regs)),
 	}
-	s.opts.hook = logPasses(logger)
-	for _, opt := range opts {
-		opt(&s.opts)
+	if s.opts.OnPass == nil {
+		s.opts.OnPass = logPasses(logger)
 	}
 	for _, reg := range s.regs {
 		switch {
@@ -212,7 +194,7 @@ func New(db *sqlate.DB, regs []Registration, shutdown time.Duration, logger *slo
 			s.tick = reg.Policy.Interval
 		}
 	}
-	if !s.opts.unlocked {
+	if !s.opts.Unlocked {
 		locker, ok := db.Dialect().(sqlate.TryLocker)
 		if !ok {
 			return nil, ErrNoTryLocker
@@ -338,7 +320,7 @@ func (s *Sweeper) cycle(ctx context.Context, drain <-chan struct{}, reg Registra
 		if !ran {
 			return nil
 		}
-		s.opts.hook(ctx, p)
+		s.opts.OnPass(ctx, p)
 		// more alone decides: a failed pass that reports more is followed
 		// by another, since a reclaimer's passes are idempotent. A gate
 		// failure ran no pass, so it reports no more and ends the cycle.
@@ -403,7 +385,7 @@ func (s *Sweeper) claimFailed(ctx context.Context, name string, err error) error
 func (s *Sweeper) pass(ctx context.Context, drain <-chan struct{}, reg Registration) (p Pass, ran bool) {
 	p.Name = reg.Name
 	start := time.Now()
-	if s.opts.gate != nil {
+	if s.opts.Gate != nil {
 		release, ended, err := s.share(ctx, drain)
 		if ended {
 			return p, false
@@ -433,7 +415,7 @@ func (s *Sweeper) share(ctx context.Context, drain <-chan struct{}) (release fun
 			}
 		}()
 	}
-	release, err = s.opts.gate.Shared(wait)
+	release, err = s.opts.Gate.Shared(wait)
 	if err != nil {
 		if wait.Err() != nil && errors.Is(err, wait.Err()) {
 			return nil, true, nil

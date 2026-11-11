@@ -125,11 +125,11 @@ func reg(name string, r sweep.Reclaimer, interval time.Duration, budget int) swe
 	return sweep.Registration{Name: name, Reclaimer: r, Policy: sweep.Policy{Interval: interval, Budget: budget}}
 }
 
-func newFixture(t *testing.T, dialect sqlate.Dialect, regs []sweep.Registration, shutdown time.Duration, opts ...sweep.Option) fixture {
+func newFixture(t *testing.T, dialect sqlate.Dialect, regs []sweep.Registration, shutdown time.Duration, opts sweep.Options) fixture {
 	t.Helper()
 	pool, rec := sqltest.Open(t)
 	l := &logs{}
-	s, err := sweep.New(sqlate.Wrap(pool, dialect), regs, shutdown, l.logger(), opts...)
+	s, err := sweep.New(sqlate.Wrap(pool, dialect), regs, shutdown, l.logger(), opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestNew_RefusesBeforeAnyIO(t *testing.T) {
 		dialect  sqlate.Dialect
 		regs     []sweep.Registration
 		shutdown time.Duration
-		opts     []sweep.Option
+		opts     sweep.Options
 		want     string
 		is       error
 	}{
@@ -205,7 +205,7 @@ func TestNew_RefusesBeforeAnyIO(t *testing.T) {
 		{name: "negative budget", regs: []sweep.Registration{reg("a", r, time.Minute, -1)}, want: "budget must be positive"},
 		{name: "zero shutdown", regs: []sweep.Registration{reg("a", r, time.Minute, 1)}, shutdown: -1, want: "shutdown must be positive"},
 		{name: "no try-lock", dialect: sqltest.Dialect{}, regs: []sweep.Registration{reg("a", r, time.Minute, 1)}, is: sweep.ErrNoTryLocker},
-		{name: "no try-lock, gated", dialect: sqltest.Dialect{}, regs: []sweep.Registration{reg("a", r, time.Minute, 1)}, opts: []sweep.Option{sweep.Gated(&reactor.Gate{})}, is: sweep.ErrNoTryLocker},
+		{name: "no try-lock, gated", dialect: sqltest.Dialect{}, regs: []sweep.Registration{reg("a", r, time.Minute, 1)}, opts: sweep.Options{Gate: &reactor.Gate{}}, is: sweep.ErrNoTryLocker},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -220,7 +220,7 @@ func TestNew_RefusesBeforeAnyIO(t *testing.T) {
 			} else if shutdown < 0 {
 				shutdown = 0
 			}
-			s, err := sweep.New(sqlate.Wrap(pool, dialect), tc.regs, shutdown, slog.New(slog.DiscardHandler), tc.opts...)
+			s, err := sweep.New(sqlate.Wrap(pool, dialect), tc.regs, shutdown, slog.New(slog.DiscardHandler), tc.opts)
 			if s != nil || err == nil {
 				t.Fatalf("New = %v, %v; want a refusal", s, err)
 			}
@@ -238,7 +238,7 @@ func TestNew_RefusesBeforeAnyIO(t *testing.T) {
 }
 
 func TestNew_UnlockedAcceptsADialectWithoutTryLock(t *testing.T) {
-	f := newFixture(t, sqltest.Dialect{}, []sweep.Registration{reg("a", &reclaimer{}, time.Minute, 1)}, time.Second, sweep.Unlocked())
+	f := newFixture(t, sqltest.Dialect{}, []sweep.Registration{reg("a", &reclaimer{}, time.Minute, 1)}, time.Second, sweep.Options{Unlocked: true})
 	if f.s == nil {
 		t.Fatal("New returned no sweeper")
 	}
@@ -249,8 +249,8 @@ func TestNew_WiringDefectsPanic(t *testing.T) {
 	db := sqlate.Wrap(pool, sqltest.LockingDialect{})
 	regs := []sweep.Registration{reg("a", &reclaimer{}, time.Minute, 1)}
 	for name, call := range map[string]func(){
-		"nil db":     func() { _, _ = sweep.New(nil, regs, time.Second, slog.New(slog.DiscardHandler)) },
-		"nil logger": func() { _, _ = sweep.New(db, regs, time.Second, nil) },
+		"nil db":     func() { _, _ = sweep.New(nil, regs, time.Second, slog.New(slog.DiscardHandler), sweep.Options{}) },
+		"nil logger": func() { _, _ = sweep.New(db, regs, time.Second, nil, sweep.Options{}) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			defer func() {
@@ -274,7 +274,7 @@ func TestHandle_TicksAtTheSmallestInterval(t *testing.T) {
 		reg("slow", slow, 5*time.Minute, 1),
 		reg("fast", &reclaimer{}, time.Minute, 1),
 		reg("rare", &reclaimer{}, time.Hour, 1),
-	}, time.Second, sweep.Unlocked())
+	}, time.Second, sweep.Options{Unlocked: true})
 	handle := sweep.Handle(f.s)
 
 	for _, at := range []time.Duration{0, 4*time.Minute + 29*time.Second, 4*time.Minute + 31*time.Second} {
@@ -290,7 +290,7 @@ func TestHandle_TicksAtTheSmallestInterval(t *testing.T) {
 func TestHandle_ClaimsTheLockAndPassesAtTheBudget(t *testing.T) {
 	var p passes
 	r := &reclaimer{}
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 7)}, time.Second, sweep.OnPass(p.hook))
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 7)}, time.Second, sweep.Options{OnPass: p.hook})
 	f.rec.Queue(claimed()...)
 
 	if err := sweep.Handle(f.s)(context.Background(), t0); err != nil {
@@ -312,7 +312,7 @@ func TestHandle_ClaimsTheLockAndPassesAtTheBudget(t *testing.T) {
 func TestHandle_ALockHeldElsewhereRunsNoPassAndReportsNothing(t *testing.T) {
 	var p passes
 	r := &reclaimer{}
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.OnPass(p.hook))
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.Options{OnPass: p.hook})
 	f.rec.Queue(flag(false))
 
 	if err := sweep.Handle(f.s)(context.Background(), t0); err != nil {
@@ -330,7 +330,7 @@ func TestHandle_ALockHeldElsewhereRunsNoPassAndReportsNothing(t *testing.T) {
 func TestHandle_PassesWhileMoreUnderOneClaim(t *testing.T) {
 	var p passes
 	r := &reclaimer{results: []result{{more: true}, {more: true}, {more: false}}}
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 3)}, time.Second, sweep.OnPass(p.hook))
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 3)}, time.Second, sweep.Options{OnPass: p.hook})
 	f.rec.Queue(claimed()...)
 
 	if err := sweep.Handle(f.s)(context.Background(), t0); err != nil {
@@ -386,7 +386,7 @@ func TestHandle_ACycleYieldsAtItsIntervalAndStaysDue(t *testing.T) {
 	// Each pass takes 20s of a 1m interval, so the cycle yields after the
 	// third, still reporting more.
 	r := endless("files", nil, c, 20*time.Second)
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second)
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.Options{})
 	sweep.SetClock(f.s, c.now)
 	handle := sweep.Handle(f.s)
 
@@ -420,7 +420,7 @@ func TestHandle_AYieldingCycleLetsTheReclaimersAfterItRun(t *testing.T) {
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{
 		reg("a", a, time.Minute, 1),
 		reg("b", b, time.Minute, 1),
-	}, time.Second)
+	}, time.Second, sweep.Options{})
 	sweep.SetClock(f.s, c.now)
 	f.rec.Queue(append(claimed(), claimed()...)...)
 
@@ -442,7 +442,7 @@ func TestHandle_ACycleWhoseLastPassReportsNoMoreIsNotLeftDue(t *testing.T) {
 		c.advance(2 * time.Minute)
 		return nil
 	}}
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second)
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.Options{})
 	sweep.SetClock(f.s, c.now)
 	handle := sweep.Handle(f.s)
 
@@ -463,7 +463,7 @@ func TestHandle_AFailedPassThatReportsMoreIsFollowedByAnother(t *testing.T) {
 	boom := errors.New("boom")
 	var p passes
 	r := &reclaimer{results: []result{{more: true, err: boom}, {more: false}}}
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.OnPass(p.hook))
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.Options{OnPass: p.hook})
 	f.rec.Queue(claimed()...)
 
 	if err := sweep.Handle(f.s)(context.Background(), t0); err != nil {
@@ -483,7 +483,7 @@ func TestHandle_AFailedPassWithoutMoreEndsTheCycleAndTheNextIntervalRetries(t *t
 	boom := errors.New("boom")
 	var p passes
 	r := &reclaimer{results: []result{{more: false, err: boom}, {more: true}, {more: false}}}
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.OnPass(p.hook))
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.Options{OnPass: p.hook})
 	f.rec.Queue(claimed()...)
 	handle := sweep.Handle(f.s)
 
@@ -514,7 +514,7 @@ func TestHandle_TheDefaultHookLogsOnlyAFailedPass(t *testing.T) {
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{
 		reg("ok", ok, time.Minute, 1),
 		reg("bad", bad, time.Minute, 1),
-	}, time.Second)
+	}, time.Second, sweep.Options{})
 	f.rec.Queue(append(claimed(), claimed()...)...)
 
 	if err := sweep.Handle(f.s)(context.Background(), t0); err != nil {
@@ -535,7 +535,7 @@ func TestHandle_NudgeRunsOnlyTheNamedReclaimer(t *testing.T) {
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{
 		reg("a", a, time.Minute, 1),
 		reg("b", b, time.Minute, 1),
-	}, time.Second)
+	}, time.Second, sweep.Options{})
 	handle := sweep.Handle(f.s)
 	f.rec.Queue(append(claimed(), claimed()...)...)
 	if err := handle(context.Background(), t0); err != nil {
@@ -564,7 +564,7 @@ func TestHandle_NudgeRunsOnlyTheNamedReclaimer(t *testing.T) {
 }
 
 func TestNudge_AnUnregisteredNamePanics(t *testing.T) {
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("a", &reclaimer{}, time.Minute, 1)}, time.Second)
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("a", &reclaimer{}, time.Minute, 1)}, time.Second, sweep.Options{})
 	defer func() {
 		if recover() == nil {
 			t.Error("Nudge of an unregistered name did not panic")
@@ -580,7 +580,7 @@ func TestHandle_EachReclaimerRunsOnItsOwnInterval(t *testing.T) {
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{
 		reg("fast", fast, time.Minute, 1),
 		reg("slow", slow, 3*time.Minute, 1),
-	}, time.Second, sweep.Unlocked())
+	}, time.Second, sweep.Options{Unlocked: true})
 	handle := sweep.Handle(f.s)
 
 	steps := []struct {
@@ -613,7 +613,7 @@ func TestHandle_EachReclaimerRunsOnItsOwnInterval(t *testing.T) {
 
 func TestHandle_UnlockedTakesNoLock(t *testing.T) {
 	r := &reclaimer{results: []result{{more: true}, {more: false}}}
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.Unlocked())
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.Options{Unlocked: true})
 
 	if err := sweep.Handle(f.s)(context.Background(), t0); err != nil {
 		t.Fatalf("handle: %v", err)
@@ -628,7 +628,7 @@ func TestHandle_UnlockedTakesNoLock(t *testing.T) {
 
 func TestHandle_AFailedClaimIsLoggedAndRetriedNextInterval(t *testing.T) {
 	r := &reclaimer{}
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second)
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.Options{})
 	f.rec.Queue(sqltest.Response{Err: errors.New("lock table full")})
 	handle := sweep.Handle(f.s)
 
@@ -652,7 +652,7 @@ func TestHandle_AFailedClaimIsLoggedAndRetriedNextInterval(t *testing.T) {
 }
 
 func TestHandle_AFailedReleaseIsLogged(t *testing.T) {
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", &reclaimer{}, time.Minute, 1)}, time.Second)
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", &reclaimer{}, time.Minute, 1)}, time.Second, sweep.Options{})
 	f.rec.Queue(flag(true), flag(false))
 
 	if err := sweep.Handle(f.s)(context.Background(), t0); err != nil {
@@ -678,7 +678,7 @@ func TestHandle_AnEndedContextReturnsItsErrorAndReleasesTheClaim(t *testing.T) {
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{
 		reg("files", r, time.Minute, 1),
 		reg("next", next, time.Minute, 1),
-	}, time.Second, sweep.OnPass(p.hook))
+	}, time.Second, sweep.Options{OnPass: p.hook})
 	f.rec.Queue(claimed()...)
 
 	if err := sweep.Handle(f.s)(ctx, t0); !errors.Is(err, context.Canceled) {
@@ -712,7 +712,7 @@ func TestHandle_EachPassHoldsTheGateShared(t *testing.T) {
 	var order []string
 	r := &reclaimer{name: "files", log: &order, results: []result{{more: true}, {more: false}}}
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second,
-		sweep.Gated(gateLog{log: &order}))
+		sweep.Options{Gate: gateLog{log: &order}})
 	f.rec.Queue(claimed()...)
 
 	if err := sweep.Handle(f.s)(context.Background(), t0); err != nil {
@@ -728,7 +728,7 @@ func TestHandle_AGateFailureIsReportedAndRunsNoPass(t *testing.T) {
 	var p passes
 	r := &reclaimer{}
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second,
-		sweep.Gated(gateLog{err: refused}), sweep.OnPass(p.hook))
+		sweep.Options{Gate: gateLog{err: refused}, OnPass: p.hook})
 	f.rec.Queue(claimed()...)
 
 	if err := sweep.Handle(f.s)(context.Background(), t0); err != nil {
@@ -765,7 +765,7 @@ func TestHandle_AGateWaitItsContextEndsRunsNoPass(t *testing.T) {
 	w := waiting{g: g, began: make(chan struct{}, 1)}
 	r := &reclaimer{}
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second,
-		sweep.Gated(w), sweep.OnPass(p.hook))
+		sweep.Options{Gate: w, OnPass: p.hook})
 	f.rec.Queue(claimed()...)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -790,7 +790,7 @@ func TestSweeper_EveryReclaimerIsDueAtStart(t *testing.T) {
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{
 		reg("a", mark("a"), time.Hour, 1),
 		reg("b", mark("b"), time.Hour, 1),
-	}, time.Second, sweep.Unlocked())
+	}, time.Second, sweep.Options{Unlocked: true})
 	if f.s.Ready() {
 		t.Error("Ready before Start")
 	}
@@ -819,7 +819,7 @@ func TestSweeper_AYieldingCycleNudgesTheReactor(t *testing.T) {
 		ran <- struct{}{}
 		return nil
 	}}
-	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Hour, 1)}, time.Second)
+	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Hour, 1)}, time.Second, sweep.Options{})
 	sweep.SetClock(f.s, c.now)
 	f.rec.Queue(append(claimed(), claimed()...)...)
 	if err := f.s.Start(context.Background()); err != nil {
@@ -850,7 +850,7 @@ func TestSweeper_TheDrainStartsNoFurtherPassAndLetsTheOneInFlightFinish(t *testi
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{
 		reg("files", r, time.Hour, 1),
 		reg("next", next, time.Hour, 1),
-	}, time.Hour)
+	}, time.Hour, sweep.Options{})
 	s = f.s
 	f.rec.Queue(claimed()...)
 	if err := f.s.Start(context.Background()); err != nil {
@@ -879,7 +879,7 @@ func TestSweeper_TheDrainsCancellationIsTheReactorsError(t *testing.T) {
 	}}
 	// CancelWithin cancels the pass at half the shutdown timeout.
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Hour, 1)}, 20*time.Millisecond,
-		sweep.OnPass(p.hook))
+		sweep.Options{OnPass: p.hook})
 	f.rec.Queue(claimed()...)
 	if err := f.s.Start(context.Background()); err != nil {
 		t.Fatal(err)
@@ -906,7 +906,7 @@ func TestSweeper_TheDrainEndsAGateWaitWithNoPass(t *testing.T) {
 	w := waiting{g: g, began: make(chan struct{}, 1)}
 	r := &reclaimer{}
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Hour, 1)}, time.Hour,
-		sweep.Gated(w), sweep.OnPass(p.hook))
+		sweep.Options{Gate: w, OnPass: p.hook})
 	f.rec.Queue(claimed()...)
 	if err := f.s.Start(context.Background()); err != nil {
 		t.Fatal(err)
