@@ -37,7 +37,8 @@
 // starts it in its layer and lists its readiness among its Checks under the
 // node's name. Its node uses the pool's node, which places it in a layer
 // above the pool, and a node that needs the corrected schema uses the
-// service's node, or orders after it with Scope.After:
+// service's node, or orders after it with graph.After(schema) on its Define
+// line:
 //
 //	schema := g.Define("schema", func(s *graph.Scope) (*admin.Service, error) {
 //		pool := s.Use(db)
