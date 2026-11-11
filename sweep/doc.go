@@ -15,16 +15,17 @@
 // non-positive interval or budget, and a non-positive shutdown timeout,
 // before any I/O.
 //
-// An [Option] configures the rest:
+// Its trailing [Options] configures the rest; the zero Options keeps the
+// defaults:
 //
-//   - [Unlocked] runs without claiming the reclaimers' locks, on a dialect
-//     without sqlate.TryLocker or with it. Without it, such a dialect is
-//     [ErrNoTryLocker].
-//   - [Gated] sets the [Gate] each pass holds shared, such as go-core's
+//   - [Options.Unlocked] runs without claiming the reclaimers' locks, on a
+//     dialect without sqlate.TryLocker or with it. Without it, such a
+//     dialect is [ErrNoTryLocker].
+//   - [Options.Gate] is the [Gate] each pass holds shared, such as go-core's
 //     reactor.Gate, so an operation that holds it exclusively, such as a
 //     schema change, runs with the passes paused.
-//   - [OnPass] sets the [Hook] each [Pass] is reported to. Without it, a
-//     pass that returned an error is logged at warn on the sweeper's
+//   - [Options.OnPass] is the [Hook] each [Pass] is reported to. Without
+//     it, a pass that returned an error is logged at warn on the sweeper's
 //     logger, and no other pass is.
 //
 // # Cycles

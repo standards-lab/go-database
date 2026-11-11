@@ -7,6 +7,21 @@ changelog covers this sub-module only; the base module keeps its own.
 
 ## [Unreleased]
 
+## [v0.7.0] - 2026-11-11
+
+### Changed
+
+- **Breaking:** The `go-database` requirement is v0.12.0, which requires `go-core` v0.12.0 and
+  `sqlate` v0.7.0 and pulls their options break into an importer's build: `sweep.New`,
+  `reactor.New`, and `event.NewRecorder` take a trailing Options struct, and sqlate's `Begin`
+  and `Transact` a trailing `*sql.TxOptions`, in place of variadic option functions, which are
+  removed.
+- The `pgx` requirement is v5.13.0, which fixes a panic in `Rows.Values` on a server response
+  with fewer row values than declared fields
+  ([GHSA-w9rp-vfrh-q8vv](https://github.com/jackc/pgx/security/advisories/GHSA-w9rp-vfrh-q8vv)),
+  and no longer marks a connection closed while receiving a response as safe to retry, so
+  `database/sql` does not repeat a statement that may already have executed.
+
 ## [v0.6.0] - 2026-11-11
 
 ### Changed
@@ -104,7 +119,8 @@ The first release of the PostgreSQL provider, against `github.com/standards-lab/
   classifying constraint violations arrives with the write path. `postgres.Provider` types the
   selection constant.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/v0.6.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/v0.7.0...HEAD
+[v0.7.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.6.0...postgres/v0.7.0
 [v0.6.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.5.0...postgres/v0.6.0
 [v0.5.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.4.0...postgres/v0.5.0
 [v0.4.0]: https://github.com/standards-lab/go-database/compare/postgres/v0.3.0...postgres/v0.4.0
