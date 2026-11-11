@@ -144,9 +144,9 @@ type Sweeper struct {
 // I/O, an empty list; a registration with an empty name, a name another
 // uses, a nil reclaimer, or a non-positive interval or budget; a
 // non-positive shutdown; and a dialect without sqlate.TryLocker, as
-// [ErrNoTryLocker], unless opts is [Options.Unlocked]. The zero opts keeps
-// the defaults; see [Options]. A nil db or logger is a wiring defect and
-// panics.
+// [ErrNoTryLocker], unless opts sets [Options.Unlocked]. The zero opts
+// keeps the defaults; see [Options]. A nil db or logger is a wiring defect
+// and panics.
 //
 // Every reclaimer is due at start: New nudges the source, which delivers
 // as soon as the reactor starts.
