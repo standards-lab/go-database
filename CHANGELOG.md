@@ -7,6 +7,62 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+## [v0.12.0] - 2026-11-11
+
+The sweeper's configuration is a trailing Options struct, not variadic option functions:
+`sweep.New` takes a `sweep.Options`, whose zero value keeps the defaults. The requirements move
+to go-core v0.12.0 and sqlate v0.7.0, which make the same change to their own constructors and
+transactions.
+
+### Added
+
+- `sweep.Options`, which configures a Sweeper. `Options.Unlocked` runs without claiming the
+  reclaimers' locks, `Options.Gate` is the gate each pass holds shared, and `Options.OnPass` is
+  the hook each `sweep.Pass` is reported to; a nil `Gate` or `OnPass` keeps its default, no gate
+  and a failed pass logged at warn.
+
+### Changed
+
+- **Breaking:** `sweep.New(db, regs, shutdown, logger, opts)` takes a trailing `sweep.Options` in
+  place of variadic `sweep.Option` values. A call with no option passes `sweep.Options{}`.
+- **Breaking:** The `go-core` requirement is v0.12.0, which pulls its options break into an
+  importer's build: `reactor.New` takes a trailing `reactor.Options` and `event.NewRecorder` an
+  `event.Options` in place of variadic option values, `reactor.CancelWithin` returns a
+  `time.Duration` for `reactor.Options.CancelAfter`, and `reactor.Option`, `reactor.CancelAfter`,
+  `event.Option`, `event.Clock`, and `event.IDs` are removed.
+- **Breaking:** The `sqlate` requirement is v0.7.0, which pulls its transaction-options break
+  into an importer's build: `DB.Begin`, `DB.Transact`, and `Transact` take a trailing
+  `*sql.TxOptions` in place of variadic `TxOption` values, nil for a default transaction;
+  `Beginner.Begin` has `DB.Begin`'s new signature; and `TxOption`, `Isolation`, and `ReadOnly`
+  are removed.
+
+### Removed
+
+- **Breaking:** `sweep.Option` and the `sweep.Unlocked`, `sweep.Gated`, and `sweep.OnPass`
+  option functions, with no aliases. Set `sweep.Options.Unlocked`, `sweep.Options.Gate`, and
+  `sweep.Options.OnPass`.
+
+### Migrating from v0.11.0
+
+- **A sweeper's options become one `sweep.Options` value.** Leave `Gate` or `OnPass` nil for
+  its default.
+
+  ```go
+  // v0.11.0
+  s, err := sweep.New(db, regs, shutdown, logger)
+  s, err := sweep.New(db, regs, shutdown, logger, sweep.Unlocked())
+  s, err := sweep.New(db, regs, shutdown, logger, sweep.Gated(gate), sweep.OnPass(hook))
+
+  // v0.12.0
+  s, err := sweep.New(db, regs, shutdown, logger, sweep.Options{})
+  s, err := sweep.New(db, regs, shutdown, logger, sweep.Options{Unlocked: true})
+  s, err := sweep.New(db, regs, shutdown, logger, sweep.Options{Gate: gate, OnPass: hook})
+  ```
+
+- **go-core and sqlate calls follow their own changelogs.** go-core v0.12.0's and sqlate
+  v0.7.0's "Migrating" sections show the `reactor.New`, `event.NewRecorder`, `Begin`, and
+  `Transact` forms.
+
 ## [v0.11.0] - 2026-11-11
 
 ### Changed
@@ -340,7 +396,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.12.0...HEAD
+[v0.12.0]: https://github.com/standards-lab/go-database/compare/v0.11.0...v0.12.0
 [v0.11.0]: https://github.com/standards-lab/go-database/compare/v0.10.0...v0.11.0
 [v0.10.0]: https://github.com/standards-lab/go-database/compare/v0.9.0...v0.10.0
 [v0.9.0]: https://github.com/standards-lab/go-database/compare/v0.8.0...v0.9.0
