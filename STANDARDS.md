@@ -13,5 +13,5 @@ The judgement calls the standards-reviewer applies to go-database, beyond what `
 - `architecture/standards/go-elemental/principles/construction-and-execution.md`: `sweep.New` takes its configuration as a trailing `sweep.Options` whose zero value keeps the defaults.
 - `architecture/principles/service-tiers.md`: `DB.Conn`, `Config.Options`, and the `postgres` provider.
 - `architecture/principles/validation-first.md`: `Config.Finalize`, and `admin`'s verbs, which refuse an argument outside their domain before any I/O.
-- `architecture/principles/context-architecture.md`: every document.
+- `architecture/principles/context-architecture.md`: the README and each `doc.go`.
 - `architecture/principles/comments.md`: every comment.
