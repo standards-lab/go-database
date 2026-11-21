@@ -61,7 +61,10 @@
 // [Service.Ready] reports the schema alone, as the last operation that
 // determined it found it; once Start has succeeded, a not-ready service
 // re-verifies at most once per five seconds. A true Ready is not
-// re-checked.
+// re-checked. A re-verification's finding yields to any operation that
+// determined the schema while it read, and an operation that determines
+// nothing, such as one a cancelled context or a lost connection ends,
+// leaves Ready as it was.
 //
 // # Operations
 //

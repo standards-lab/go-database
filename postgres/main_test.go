@@ -7,11 +7,13 @@ import (
 	_ "time/tzdata"
 )
 
+const nonUTCLocalZone = "Europe/London"
+
 func TestMain(m *testing.M) {
-	london, err := time.LoadLocation("Europe/London")
+	local, err := time.LoadLocation(nonUTCLocalZone)
 	if err != nil {
 		panic(err)
 	}
-	time.Local = london
+	time.Local = local
 	os.Exit(m.Run())
 }
