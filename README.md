@@ -29,8 +29,8 @@ principles:
 - Swapping the SQL provider is a port. The consumer owns its schema, its migrations, and its
   domain SQL, and those are what a swap rewrites. A library that ships its own migration set,
   such as `blobfs`, owns that set; the consumer declares it beneath its own.
-- The HTTP half of the admin service, the route group and handler, is application code: the
-  reference service builds it, and the template stays engine-free.
+- The HTTP half of the admin service, the route group and handler, is application code; this
+  library ships none.
 
 ## Packages
 
@@ -43,7 +43,7 @@ principles:
 - `sweep` runs a service's reclaimers, the bounded passes its libraries' garbage is removed in,
   as one go-core reactor: each on its own interval or when nudged by name, under a per-reclaimer
   advisory lock so one replica reclaims at a time, and paused under the service's quiesce gate.
-  It imports no reclaimer; blobfs's sweep and go-messaging's retention satisfy its interface.
+  It imports no reclaimer; a library's reclaimer satisfies its interface.
 - `postgres` is the PostgreSQL provider: it constructs the pool over pgx's `database/sql` adapter
   from the configuration block.
 
