@@ -29,6 +29,8 @@ principles:
 - Swapping the SQL provider is a port. The consumer owns its schema, its migrations, and its
   domain SQL, and those are what a swap rewrites. A library that ships its own migration set,
   such as `blobfs`, owns that set; the consumer declares it beneath its own.
+- The HTTP half of the admin service, the route group and handler, is application code: the
+  reference service builds it, and the template stays engine-free.
 
 ## Packages
 
