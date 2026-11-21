@@ -68,11 +68,11 @@ Two-way: every change sits on branches and pull requests, and nothing is tagged.
 
 ## Progress
 
-slices 0/9 committed · standards — · spec — · editor —
+slices 9/9 committed · standards ✓ · spec ✓ (1 round: behavior 4 map entries) · editor ✓
 
 ## Decisions
 
-- adopt: CHANGELOG entries record only changes to a module's `go.mod` requirements. (wave 1, W2)
+None.
 
 ## Pending edits
 
