@@ -10,8 +10,6 @@ import (
 	"github.com/standards-lab/go-database"
 )
 
-// validConfig satisfies the one required field; everything else exercises
-// defaults under test.
 func validConfig() database.Config {
 	return database.Config{Name: "app"}
 }
@@ -36,7 +34,6 @@ func TestConfig_MergeOverlaysSetFields(t *testing.T) {
 	if base.Port == nil || *base.Port != 5433 {
 		t.Errorf("Port = %v, want 5433", base.Port)
 	}
-	// Fields the overlay leaves unset keep the base values.
 	if base.Name != "app" {
 		t.Errorf("Name = %s, want app", base.Name)
 	}
@@ -45,7 +42,6 @@ func TestConfig_MergeOverlaysSetFields(t *testing.T) {
 	}
 }
 
-// Every field an overlay sets replaces the base's.
 func TestConfig_MergeOverlaysEveryField(t *testing.T) {
 	base := database.Config{
 		Host: "a", Name: "a", User: "a", Password: "a", Port: new(1),
@@ -79,7 +75,6 @@ func TestConfig_MergeOverlaysEveryField(t *testing.T) {
 	}
 }
 
-// Finalized reports whether Finalize has filled every pointer New reads.
 func TestConfig_Finalized(t *testing.T) {
 	cfg := validConfig()
 	if cfg.Finalized() {
@@ -111,7 +106,6 @@ func TestConfig_MergeOptionsKeyWise(t *testing.T) {
 	if got := base.Options["sslmode"]; got != "require" {
 		t.Errorf("Options[sslmode] = %s, want require", got)
 	}
-	// An overlay key overrides without dropping the others.
 	if got := base.Options["application_name"]; got != "svc" {
 		t.Errorf("Options[application_name] = %s, want svc", got)
 	}
@@ -137,7 +131,6 @@ func TestConfig_FinalizeDefaults(t *testing.T) {
 	if cfg.Host != "localhost" {
 		t.Errorf("Host = %s, want localhost", cfg.Host)
 	}
-	// Port keeps no base default: 5432 is a provider fact.
 	if cfg.Port != nil {
 		t.Errorf("Port = %v, want nil", cfg.Port)
 	}
@@ -254,7 +247,6 @@ func TestConfig_FinalizeMalformedEnvFails(t *testing.T) {
 }
 
 func TestConfig_FinalizeZeroEnvDisablesOverrides(t *testing.T) {
-	// The zero Env names no variables, so ambient values cannot leak in.
 	t.Setenv("TEST_DATABASE_HOST", "db.internal")
 
 	cfg := validConfig()
@@ -339,8 +331,6 @@ func TestConfig_Validate(t *testing.T) {
 }
 
 func TestConfig_ValidateAllowsZeroPools(t *testing.T) {
-	// Zero means unlimited open connections and no idle pool, per
-	// database/sql semantics; both survive defaults and validation.
 	cfg := validConfig()
 	cfg.MaxOpenConns = new(0)
 	cfg.MaxIdleConns = new(0)

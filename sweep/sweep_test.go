@@ -19,32 +19,25 @@ import (
 	"github.com/standards-lab/sqlate/sqltest"
 )
 
-// t0 is the first delivery's time in the tests that drive the handler.
 var t0 = time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 
-// flag scripts the one boolean row a try-lock or unlock statement reads.
 func flag(b bool) sqltest.Response {
 	return sqltest.Response{Columns: []string{"ok"}, Rows: [][]driver.Value{{b}}}
 }
 
-// claimed scripts one cycle whose claim is granted and released.
 func claimed() []sqltest.Response { return []sqltest.Response{flag(true), flag(true)} }
 
-// result is one scripted pass outcome.
 type result struct {
 	more bool
 	err  error
 }
 
-// reclaimer is a fake Reclaimer: it returns its scripted results in order,
-// then (false, nil), and records each budget it was given. block, when
-// set, runs inside each pass before it returns.
 type reclaimer struct {
 	mu      sync.Mutex
 	results []result
 	budgets []int
 	block   func(ctx context.Context) error
-	log     *[]string // shared order log, when set
+	log     *[]string
 	name    string
 }
 
@@ -74,7 +67,6 @@ func (r *reclaimer) passes() int {
 	return len(r.budgets)
 }
 
-// passes collects the hook's reports.
 type passes struct {
 	mu  sync.Mutex
 	got []sweep.Pass
@@ -92,8 +84,6 @@ func (p *passes) all() []sweep.Pass {
 	return slices.Clone(p.got)
 }
 
-// logs is a logger whose output a test reads, safe for the reactor's
-// goroutine to write.
 type logs struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -113,7 +103,6 @@ func (l *logs) String() string {
 
 func (l *logs) logger() *slog.Logger { return slog.New(slog.NewTextHandler(l, nil)) }
 
-// fixture is a sweeper over a scripted locking pool.
 type fixture struct {
 	s    *sweep.Sweeper
 	pool *sql.DB
@@ -136,7 +125,6 @@ func newFixture(t *testing.T, dialect sqlate.Dialect, regs []sweep.Registration,
 	return fixture{s: s, pool: pool, rec: rec, logs: l}
 }
 
-// locks returns the lock statements recorded, each with its lock's name.
 func locks(rec *sqltest.Recorder) []string {
 	var out []string
 	for _, c := range rec.Calls() {
@@ -157,8 +145,6 @@ func wantLocks(t *testing.T, rec *sqltest.Recorder, want ...string) {
 	}
 }
 
-// await receives from ch, failing the test if nothing arrives in time, so a
-// sweeper that never gets there fails rather than hangs.
 func await[T any](t *testing.T, ch <-chan T, what string) T {
 	t.Helper()
 	select {
@@ -171,8 +157,6 @@ func await[T any](t *testing.T, ch <-chan T, what string) T {
 	}
 }
 
-// shutdown drains s within a bound, so a drain that never ends fails the
-// test rather than hangs it.
 func shutdown(s *sweep.Sweeper) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -264,10 +248,6 @@ func TestNew_WiringDefectsPanic(t *testing.T) {
 }
 
 func TestHandle_TicksAtTheSmallestInterval(t *testing.T) {
-	// The tick is the smallest interval, 1m, so a reclaimer is due half a
-	// tick, 30s, before its own interval has passed: slow's 5m makes it due
-	// from 4m30s. A tick of the largest interval would make it due from
-	// 4m-30m, and one of the middle interval from 2m30s.
 	var order []string
 	slow := &reclaimer{name: "slow", log: &order}
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{
@@ -349,8 +329,6 @@ func TestHandle_PassesWhileMoreUnderOneClaim(t *testing.T) {
 	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
 }
 
-// clock is a fake clock for a sweeper's cycle bound, which a reclaimer's
-// pass advances so a cycle runs past its interval without sleeping.
 type clock struct {
 	mu sync.Mutex
 	t  time.Time
@@ -368,8 +346,6 @@ func (c *clock) advance(d time.Duration) {
 	c.t = c.t.Add(d)
 }
 
-// endless is a reclaimer that reports more on every pass, each pass
-// advancing c by step.
 func endless(name string, log *[]string, c *clock, step time.Duration) *reclaimer {
 	results := make([]result, 100)
 	for i := range results {
@@ -383,8 +359,6 @@ func endless(name string, log *[]string, c *clock, step time.Duration) *reclaime
 
 func TestHandle_ACycleYieldsAtItsIntervalAndStaysDue(t *testing.T) {
 	c := &clock{t: t0}
-	// Each pass takes 20s of a 1m interval, so the cycle yields after the
-	// third, still reporting more.
 	r := endless("files", nil, c, 20*time.Second)
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Minute, 1)}, time.Second, sweep.Options{})
 	sweep.SetClock(f.s, c.now)
@@ -399,8 +373,6 @@ func TestHandle_ACycleYieldsAtItsIntervalAndStaysDue(t *testing.T) {
 	}
 	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
 
-	// The next delivery, a second later and well inside the interval, runs
-	// the yielded reclaimer again.
 	f.rec.Queue(claimed()...)
 	if err := handle(context.Background(), t0.Add(time.Second)); err != nil {
 		t.Fatalf("second handle: %v", err)
@@ -435,9 +407,6 @@ func TestHandle_AYieldingCycleLetsTheReclaimersAfterItRun(t *testing.T) {
 
 func TestHandle_ACycleWhoseLastPassReportsNoMoreIsNotLeftDue(t *testing.T) {
 	c := &clock{t: t0}
-	// The one pass outlasts the 1m interval but reports no more, so the
-	// cycle ends rather than yields, and the reclaimer waits out its
-	// interval.
 	r := &reclaimer{block: func(context.Context) error {
 		c.advance(2 * time.Minute)
 		return nil
@@ -551,7 +520,6 @@ func TestHandle_NudgeRunsOnlyTheNamedReclaimer(t *testing.T) {
 		t.Errorf("passes = %q, want %q", order, want)
 	}
 
-	// The nudge was consumed: a delivery before the interval runs nothing.
 	if err := handle(context.Background(), t0.Add(2*time.Second)); err != nil {
 		t.Fatalf("handle: %v", err)
 	}
@@ -587,10 +555,8 @@ func TestHandle_EachReclaimerRunsOnItsOwnInterval(t *testing.T) {
 		at   time.Duration
 		want []string
 	}{
-		{0, []string{"fast", "slow"}}, // every reclaimer is due at start
-		{29 * time.Second, nil},       // under the interval less half a tick
-		// A tick a little short of the interval, as a tick after a
-		// nudge's delivery is, still counts.
+		{0, []string{"fast", "slow"}},
+		{29 * time.Second, nil},
 		{time.Minute - time.Second, []string{"fast"}},
 		{2 * time.Minute, []string{"fast"}},
 		{3*time.Minute - time.Second, []string{"fast", "slow"}},
@@ -693,8 +659,6 @@ func TestHandle_AnEndedContextReturnsItsErrorAndReleasesTheClaim(t *testing.T) {
 	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
 }
 
-// gateLog is a Gate that records each acquisition and release in a shared
-// log, or fails with err.
 type gateLog struct {
 	log *[]string
 	err error
@@ -743,7 +707,6 @@ func TestHandle_AGateFailureIsReportedAndRunsNoPass(t *testing.T) {
 	wantLocks(t, f.rec, try+"sweep.files", unlock+"sweep.files")
 }
 
-// waiting is a Gate over a reactor.Gate that signals each wait it begins.
 type waiting struct {
 	g     *reactor.Gate
 	began chan struct{}
@@ -810,8 +773,6 @@ func TestSweeper_EveryReclaimerIsDueAtStart(t *testing.T) {
 }
 
 func TestSweeper_AYieldingCycleNudgesTheReactor(t *testing.T) {
-	// The interval is an hour, so a second delivery that comes at all comes
-	// from the yield's nudge, not a tick.
 	c := &clock{t: t0}
 	ran := make(chan struct{}, 2)
 	r := &reclaimer{results: []result{{more: true}}, block: func(context.Context) error {
@@ -838,8 +799,6 @@ func TestSweeper_TheDrainStartsNoFurtherPassAndLetsTheOneInFlightFinish(t *testi
 	entered := make(chan struct{})
 	var readyInPass bool
 	var s *sweep.Sweeper
-	// The pass in flight returns, reporting more, only once the drain has
-	// begun: the cycle must not start another.
 	r := &reclaimer{results: []result{{more: true}, {more: true}}, block: func(ctx context.Context) error {
 		readyInPass = s.Ready()
 		close(entered)
@@ -877,7 +836,6 @@ func TestSweeper_TheDrainsCancellationIsTheReactorsError(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}}
-	// CancelWithin cancels the pass at half the shutdown timeout.
 	f := newFixture(t, sqltest.LockingDialect{}, []sweep.Registration{reg("files", r, time.Hour, 1)}, 20*time.Millisecond,
 		sweep.Options{OnPass: p.hook})
 	f.rec.Queue(claimed()...)

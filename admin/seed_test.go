@@ -13,8 +13,6 @@ import (
 	"github.com/standards-lab/sqlate/sqltest"
 )
 
-// With no set configured, a seed request that names none refuses before
-// any I/O and the seeder is never called.
 func TestSeed_NoSetRefuses(t *testing.T) {
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{}})
 	n, err := f.service.Seed(context.Background(), "")
@@ -26,8 +24,6 @@ func TestSeed_NoSetRefuses(t *testing.T) {
 	}
 }
 
-// Without a seeder, every seed operation refuses the same way, and States
-// is empty.
 func TestSeed_NoSeederRefuses(t *testing.T) {
 	s, rec := newService(t)
 	ctx := context.Background()
@@ -48,8 +44,6 @@ func TestSeed_NoSeederRefuses(t *testing.T) {
 	}
 }
 
-// A name the seeder does not declare refuses Seed and Reset before any
-// I/O, and the error names it.
 func TestSeed_UnknownStateRefuses(t *testing.T) {
 	f := newFixture(t, testDialect{}, admin.Options{Seed: "default", Seeder: &fakeSeeder{}})
 	ctx := context.Background()
@@ -65,7 +59,6 @@ func TestSeed_UnknownStateRefuses(t *testing.T) {
 	}
 }
 
-// States is the seeder's list.
 func TestStates_ListsTheSeeders(t *testing.T) {
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{states: []string{"default", "empty"}}})
 	if got := f.service.States(); !slices.Equal(got, []string{"default", "empty"}) {
@@ -73,7 +66,6 @@ func TestStates_ListsTheSeeders(t *testing.T) {
 	}
 }
 
-// A request that names no set applies the configured one.
 func TestSeed_EmptyNameAppliesTheConfiguredSet(t *testing.T) {
 	f := newFixture(t, testDialect{}, admin.Options{Seed: "default", Seeder: &fakeSeeder{}})
 	n, err := f.service.Seed(context.Background(), "")
@@ -82,7 +74,6 @@ func TestSeed_EmptyNameAppliesTheConfiguredSet(t *testing.T) {
 	}
 }
 
-// A named set applies whether or not a set is configured.
 func TestSeed_NamedSetAppliesWithoutConfiguration(t *testing.T) {
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{states: []string{"default", "demo"}}})
 	n, err := f.service.Seed(context.Background(), "demo")
@@ -91,8 +82,6 @@ func TestSeed_NamedSetAppliesWithoutConfiguration(t *testing.T) {
 	}
 }
 
-// With a set configured, Start applies it by name once the schema is
-// current and verified.
 func TestStart_AppliesTheConfiguredSet(t *testing.T) {
 	f := newFixture(t, testDialect{}, admin.Options{Seed: "default", Seeder: &fakeSeeder{}}, clean()...)
 	if err := f.service.Start(context.Background()); err != nil {
@@ -103,8 +92,6 @@ func TestStart_AppliesTheConfiguredSet(t *testing.T) {
 	}
 }
 
-// A configured name the seeder does not declare is a configuration
-// defect: Start fails before it reads or changes the schema.
 func TestStart_UnknownConfiguredSetFailsStartup(t *testing.T) {
 	f := newFixture(t, testDialect{}, admin.Options{Seed: "nope", Seeder: &fakeSeeder{}})
 	err := f.service.Start(context.Background())
@@ -116,7 +103,6 @@ func TestStart_UnknownConfiguredSetFailsStartup(t *testing.T) {
 	}
 }
 
-// A startup seed that fails fails Start, and the service is not ready.
 func TestStart_SeedFailureFailsStartup(t *testing.T) {
 	f := newFixture(t, testDialect{}, admin.Options{Seed: "default", Seeder: &fakeSeeder{seedErr: errors.New("seed failed")}}, clean()...)
 	err := f.service.Start(context.Background())
@@ -128,8 +114,6 @@ func TestStart_SeedFailureFailsStartup(t *testing.T) {
 	}
 }
 
-// Reset with no state named brings the database to the configured one,
-// and refuses when none is configured.
 func TestReset_EmptyNameUsesTheConfiguredSet(t *testing.T) {
 	responses := slices.Concat(resetting(), applying(), current())
 	f := newFixture(t, testDialect{}, admin.Options{Seed: "default", Seeder: &fakeSeeder{}}, responses...)
@@ -144,7 +128,6 @@ func TestReset_EmptyNameUsesTheConfiguredSet(t *testing.T) {
 	}
 }
 
-// States hands out a copy: changing it leaves the seeder's list alone.
 func TestStates_ReturnsACopy(t *testing.T) {
 	states := []string{"default", "empty"}
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{states: states}})
@@ -154,10 +137,6 @@ func TestStates_ReturnsACopy(t *testing.T) {
 	}
 }
 
-// Reset reverts the applied set under the lock and drops its history
-// table, applies it again, seeds the named state's set, and answers with
-// the state, the refreshed status, and the rows. With no OnReset hook, the
-// transition is these steps alone.
 func TestReset_RevertsAppliesAndSeeds(t *testing.T) {
 	responses := slices.Concat(resetting(), applying(), current())
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{states: []string{"default", "empty"}}}, responses...)
@@ -171,8 +150,6 @@ func TestReset_RevertsAppliesAndSeeds(t *testing.T) {
 	if !slices.Equal(f.seeder.seeded, []string{"empty"}) || !f.service.Ready() || f.rec.Pending() != 0 {
 		t.Errorf("seeded %v, ready %v, pending %d", f.seeder.seeded, f.service.Ready(), f.rec.Pending())
 	}
-	// The downs run newest first, then the ups oldest first, each pass
-	// under its own lock.
 	var order []string
 	for _, e := range f.rec.SQL(sqltest.OpExec) {
 		if strings.HasPrefix(e, "SELECT lock") || strings.HasPrefix(e, "DROP") || strings.HasPrefix(e, "CREATE TABLE a") || strings.HasPrefix(e, "CREATE INDEX") {
@@ -188,13 +165,10 @@ func TestReset_RevertsAppliesAndSeeds(t *testing.T) {
 	}
 }
 
-// A history the transition cannot proceed from stops it at the revert,
-// nothing is seeded, and the status is still read so Ready reflects the
-// schema left behind.
 func TestReset_DirtyHistoryStopsAtTheRevert(t *testing.T) {
 	dirty := history([]driver.Value{int64(1), "a", false}, []driver.Value{int64(2), "b", true})
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{}},
-		exists(true), applied(), // a clean Verify first, so Ready starts true
+		exists(true), applied(),
 		locked, created, dirty, unlocked,
 		exists(true), dirty,
 	)
@@ -210,8 +184,6 @@ func TestReset_DirtyHistoryStopsAtTheRevert(t *testing.T) {
 	}
 }
 
-// A transition that fails at the apply seeds nothing, and the status read
-// after it finds the schema behind.
 func TestReset_FailureAtTheApply(t *testing.T) {
 	boom := errors.New("create failed")
 	responses := slices.Concat(resetting(),
@@ -228,8 +200,6 @@ func TestReset_FailureAtTheApply(t *testing.T) {
 	}
 }
 
-// A transition that fails at the seed leaves the schema applied and
-// current, and Ready reports it so.
 func TestReset_FailureAtTheSeed(t *testing.T) {
 	boom := errors.New("seed failed")
 	responses := slices.Concat(resetting(), applying(), current())
@@ -243,16 +213,12 @@ func TestReset_FailureAtTheSeed(t *testing.T) {
 	}
 }
 
-// hookCall is what an OnReset hook saw when Reset called it.
 type hookCall struct {
 	state   string
-	pending int      // scripted responses not yet consumed
-	seeded  []string // the states seeded so far
+	pending int
+	seeded  []string
 }
 
-// recordHook returns an OnReset hook that records each call into calls,
-// with how far the fixture's script and seeder had run, and answers err.
-// It reads *f at the call, so it can be wired before the fixture is built.
 func recordHook(f *fixture, calls *[]hookCall, err error) func(context.Context, string) error {
 	return func(_ context.Context, state string) error {
 		*calls = append(*calls, hookCall{state: state, pending: f.rec.Pending(), seeded: slices.Clone(f.seeder.seeded)})
@@ -260,9 +226,6 @@ func recordHook(f *fixture, calls *[]hookCall, err error) func(context.Context, 
 	}
 }
 
-// Reset calls the hook once, with the state it resolved, after the revert
-// and the apply have run and before the seed: at the call, only the status
-// read is left of the script, and nothing is seeded.
 func TestReset_HookRunsBetweenTheApplyAndTheSeed(t *testing.T) {
 	cases := []struct {
 		name, configured, request, want string
@@ -298,9 +261,6 @@ func TestReset_HookRunsBetweenTheApplyAndTheSeed(t *testing.T) {
 	}
 }
 
-// A hook that fails stops Reset before the seed: the error names the step
-// and wraps the hook's, nothing is seeded, and the schema is left applied
-// and current, as the status read after it finds.
 func TestReset_FailureAtTheHook(t *testing.T) {
 	boom := errors.New("hook failed")
 	var calls []hookCall
@@ -319,17 +279,15 @@ func TestReset_FailureAtTheHook(t *testing.T) {
 	}
 }
 
-// Only Reset calls the hook: Start, Seed, and the schema verbs each run
-// to completion without it.
 func TestOnReset_OtherVerbsNeverCallIt(t *testing.T) {
 	one := history([]driver.Value{int64(1), "a", false})
 	responses := slices.Concat(
-		clean(),               // Start
-		current(),             // Status
-		applying(), current(), // Up
-		[]sqltest.Response{locked, created, applied(), {}, {}, {}, unlocked, exists(true), one}, // Down 1
-		[]sqltest.Response{locked, created, history(), {}, {}, unlocked, exists(true), one},     // Steps +1
-		[]sqltest.Response{locked, {}, {}, {Affected: 1}, unlocked, exists(true), one},          // Force 1
+		clean(),
+		current(),
+		applying(), current(),
+		[]sqltest.Response{locked, created, applied(), {}, {}, {}, unlocked, exists(true), one},
+		[]sqltest.Response{locked, created, history(), {}, {}, unlocked, exists(true), one},
+		[]sqltest.Response{locked, {}, {}, {Affected: 1}, unlocked, exists(true), one},
 	)
 	var calls int
 	opts := admin.Options{

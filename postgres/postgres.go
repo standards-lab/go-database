@@ -42,10 +42,6 @@ func New(cfg database.Config) (*database.DB, error) {
 	return database.New(stdlib.OpenDB(*connCfg, stdlib.OptionAfterConnect(scanUTC)), cfg), nil
 }
 
-// scanUTC registers, on each new connection's type map, a timestamptz codec
-// that returns its values in time.UTC; pgx's default codec returns them in
-// time.Local, and the session's TimeZone does not change that. timestamp
-// needs no codec: pgx already returns it in time.UTC.
 func scanUTC(_ context.Context, conn *pgx.Conn) error {
 	conn.TypeMap().RegisterType(&pgtype.Type{
 		Name:  "timestamptz",
@@ -55,8 +51,6 @@ func scanUTC(_ context.Context, conn *pgx.Conn) error {
 	return nil
 }
 
-// connConfig composes the connection URL from cfg, parses it, and sets the
-// password and connect timeout on the parsed config.
 func connConfig(cfg database.Config) (*pgx.ConnConfig, error) {
 	for key := range cfg.Options {
 		if reservedOptions[key] {
@@ -79,8 +73,6 @@ func connConfig(cfg database.Config) (*pgx.ConnConfig, error) {
 		Path:   "/" + cfg.Name,
 	}
 	if strings.HasPrefix(cfg.Host, "/") {
-		// A Unix-socket directory is no URL authority: pgx reads it, and
-		// the port naming the socket file, from the query.
 		query.Set("host", cfg.Host)
 		query.Set("port", strconv.Itoa(port))
 	} else {

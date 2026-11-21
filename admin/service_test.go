@@ -21,8 +21,6 @@ import (
 	"github.com/standards-lab/sqlate/sqltest"
 )
 
-// set is the migration set every test administers: one transactional
-// migration and one that runs outside a transaction.
 var set = []migrate.Migration{
 	{Version: 1, Name: "a", Up: "CREATE TABLE a (x int)", Down: "DROP TABLE a", Transactional: true},
 	{Version: 2, Name: "b", Up: "CREATE INDEX CONCURRENTLY ix ON a (x)", Down: "DROP INDEX CONCURRENTLY ix"},
@@ -47,7 +45,6 @@ func history(rows ...[]driver.Value) sqltest.Response {
 	return sqltest.Response{Columns: historyCols, Rows: rows}
 }
 
-// applied is the history of the whole set, clean.
 func applied() sqltest.Response {
 	var rows [][]driver.Value
 	for _, m := range set {
@@ -56,51 +53,38 @@ func applied() sqltest.Response {
 	return history(rows...)
 }
 
-// clean is the script of a Start over a complete, clean history: Verify
-// alone, since a clean history puts the set at its latest version.
 func clean() []sqltest.Response {
 	return []sqltest.Response{exists(true), applied()}
 }
 
-// applying is the script of an Up over an empty database: the lock, the
-// history table, the empty history, each migration's statements, and the
-// unlock.
 func applying() []sqltest.Response {
 	rs := []sqltest.Response{locked, created, history()}
 	for _, m := range set {
 		if m.Transactional {
-			rs = append(rs, sqltest.Response{}, sqltest.Response{}) // up, insert
+			rs = append(rs, sqltest.Response{}, sqltest.Response{})
 		} else {
-			rs = append(rs, sqltest.Response{}, sqltest.Response{}, sqltest.Response{}) // dirty, up, clean
+			rs = append(rs, sqltest.Response{}, sqltest.Response{}, sqltest.Response{})
 		}
 	}
 	return append(rs, unlocked)
 }
 
-// resetting is the script of a Reset over the whole applied set: the lock,
-// the history table, the complete history, each migration's statements in
-// reverse, the history table's drop, and the unlock.
 func resetting() []sqltest.Response {
 	rs := []sqltest.Response{locked, created, applied()}
 	for _, s := range slices.Backward(set) {
 		if s.Transactional {
-			rs = append(rs, sqltest.Response{}, sqltest.Response{}) // down, delete
+			rs = append(rs, sqltest.Response{}, sqltest.Response{})
 		} else {
-			rs = append(rs, sqltest.Response{}, sqltest.Response{}, sqltest.Response{}) // dirty, down, delete
+			rs = append(rs, sqltest.Response{}, sqltest.Response{}, sqltest.Response{})
 		}
 	}
-	return append(rs, sqltest.Response{}, unlocked) // drop
+	return append(rs, sqltest.Response{}, unlocked)
 }
 
-// current is the script of a Status over a complete, clean history: the
-// history table's existence, then the history.
 func current() []sqltest.Response {
 	return []sqltest.Response{exists(true), applied()}
 }
 
-// testDialect is the stub dialect with the two capabilities an engine
-// sub-module supplies: the lock the migrator takes, and the server-version
-// statement Diagnose reads.
 type testDialect struct{ sqltest.Dialect }
 
 func (testDialect) Lock(ctx context.Context, conn *sql.Conn, name string) error {
@@ -121,8 +105,6 @@ func (testDialect) Unlock(ctx context.Context, conn *sql.Conn, name string) erro
 
 func (testDialect) ServerVersion() string { return "SELECT version()" }
 
-// fakeSeeder declares its states (default alone when none are set),
-// records the names it was asked to seed, and answers with a fixed count.
 type fakeSeeder struct {
 	verifyErr error
 	seedErr   error
@@ -148,20 +130,15 @@ func (f *fakeSeeder) Seed(_ context.Context, state string) (admin.Seeded, error)
 	return admin.Seeded{"things": 2}, nil
 }
 
-// A *Service takes part in a lifecycle.Coordinator's startup and readiness
-// as the Value of a graph.Dependency, with no adapter.
 var (
 	_ lifecycle.Starter          = (*admin.Service)(nil)
 	_ lifecycle.ReadinessChecker = (*admin.Service)(nil)
 )
 
-// fakeRegistry is one domain's compiled statements.
 type fakeRegistry []admin.Entry
 
 func (r fakeRegistry) Registry() []admin.Entry { return r }
 
-// started wraps the fake pool in the provider's lifecycle object, started,
-// the way the composition root hands it to the admin service.
 func started(t *testing.T, pool *sql.DB) *database.DB {
 	t.Helper()
 	cfg := database.Config{Name: "test"}
@@ -182,16 +159,11 @@ type fixture struct {
 	seeder  *fakeSeeder
 }
 
-// newFixture builds the service over the fake pool with dialect d, the
-// migration set as the one set "app", the library's own patterns, a
-// one-statement registry, and opts, whose Seeder, when set, is the fake the
-// fixture exposes.
 func newFixture(t *testing.T, d sqlate.Dialect, opts admin.Options, responses ...sqltest.Response) fixture {
 	t.Helper()
 	return newSetsFixture(t, []migrate.Set{{Name: "app", Migrations: set}}, d, opts, responses...)
 }
 
-// newSetsFixture is newFixture over a migrator running sets.
 func newSetsFixture(t *testing.T, sets []migrate.Set, d sqlate.Dialect, opts admin.Options, responses ...sqltest.Response) fixture {
 	t.Helper()
 	pool, rec := sqltest.Open(t, responses...)
@@ -247,8 +219,6 @@ func TestNew_PanicsOnWiringDefects(t *testing.T) {
 	wantPanic(t, "without a Seeder", func() { admin.New(base, db, m, catalog, admin.Options{Seed: "default"}) })
 }
 
-// Start on a complete, clean history verifies and reports ready without
-// taking the lock or writing, and verifies the seeder's statements once.
 func TestStart_CleanHistoryIsReady(t *testing.T) {
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{}}, clean()...)
 	if f.service.Ready() {
@@ -268,8 +238,6 @@ func TestStart_CleanHistoryIsReady(t *testing.T) {
 	}
 }
 
-// Start on an empty database reads the pending set, applies it under the
-// lock, then verifies.
 func TestStart_PendingHistoryIsApplied(t *testing.T) {
 	responses := slices.Concat([]sqltest.Response{exists(false), exists(false)}, applying(), clean())
 	s, rec := newService(t, responses...)
@@ -284,8 +252,6 @@ func TestStart_PendingHistoryIsApplied(t *testing.T) {
 	}
 }
 
-// A dirty history is a state startup cannot correct: Start fails, the
-// service stays not ready, and nothing runs against the schema.
 func TestStart_DirtyHistoryFailsStartup(t *testing.T) {
 	s, rec := newService(t, exists(true),
 		history([]driver.Value{int64(1), "a", false}, []driver.Value{int64(2), "b", true}))
@@ -298,8 +264,6 @@ func TestStart_DirtyHistoryFailsStartup(t *testing.T) {
 	}
 }
 
-// A seeder whose statements do not prepare fails startup and clears
-// readiness the schema check had set.
 func TestStart_SeederVerifyFailureClearsReady(t *testing.T) {
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{}}, clean()...)
 	f.seeder.verifyErr = errors.New("seed statement does not prepare")
@@ -312,8 +276,6 @@ func TestStart_SeederVerifyFailureClearsReady(t *testing.T) {
 	}
 }
 
-// Status reads the set's head, latest version, and pending versions,
-// marks each migration, and refreshes Ready.
 func TestStatus_ReportsHeadAndPending(t *testing.T) {
 	s, rec := newService(t, exists(true), history([]driver.Value{int64(1), "a", false}))
 	st, err := s.Status(context.Background())
@@ -335,8 +297,6 @@ func TestStatus_ReportsHeadAndPending(t *testing.T) {
 	}
 }
 
-// Verify on a pending schema reports the pending versions and leaves the
-// service not ready; on a complete one it sets ready.
 func TestVerify_RefreshesReady(t *testing.T) {
 	s, _ := newService(t,
 		exists(true), history([]driver.Value{int64(1), "a", false}),
@@ -354,7 +314,6 @@ func TestVerify_RefreshesReady(t *testing.T) {
 	}
 }
 
-// The verbs reject arguments outside their domain before any I/O.
 func TestVerbs_ValidateBeforeIO(t *testing.T) {
 	s, rec := newService(t)
 	ctx := context.Background()
@@ -374,7 +333,6 @@ func TestVerbs_ValidateBeforeIO(t *testing.T) {
 	}
 }
 
-// Up applies the set and answers with the refreshed status.
 func TestUp_ReturnsRefreshedStatus(t *testing.T) {
 	responses := append(applying(), current()...)
 	s, rec := newService(t, responses...)
@@ -387,8 +345,6 @@ func TestUp_ReturnsRefreshedStatus(t *testing.T) {
 	}
 }
 
-// Force to a version outside the set is refused before any I/O, and Ready
-// is left as the last operation found it.
 func TestForce_OutsideTheSetIsRefusedBeforeIO(t *testing.T) {
 	s, rec := newService(t, clean()...)
 	ctx := context.Background()
@@ -405,15 +361,11 @@ func TestForce_OutsideTheSetIsRefusedBeforeIO(t *testing.T) {
 	}
 }
 
-// Steps applies the next pending migration and reverts the last applied
-// one, each answering with the refreshed status.
 func TestSteps_AppliesAndReverts(t *testing.T) {
 	one := history([]driver.Value{int64(1), "a", false})
 	s, rec := newService(t,
-		// Steps +1 over an empty database: app 1 up, insert.
 		locked, created, history(), sqltest.Response{}, sqltest.Response{}, unlocked,
 		exists(true), one,
-		// Steps -1 over the whole set: app 2 dirty, down, delete.
 		locked, created, applied(), sqltest.Response{}, sqltest.Response{}, sqltest.Response{}, unlocked,
 		exists(true), one,
 	)
@@ -434,8 +386,6 @@ func TestSteps_AppliesAndReverts(t *testing.T) {
 	}
 }
 
-// Down reverts the named set's last migration and answers with the
-// refreshed status.
 func TestDown_RevertsAndReportsStatus(t *testing.T) {
 	s, rec := newService(t,
 		locked, created, applied(), sqltest.Response{}, sqltest.Response{}, sqltest.Response{}, unlocked,
@@ -453,8 +403,6 @@ func TestDown_RevertsAndReportsStatus(t *testing.T) {
 	}
 }
 
-// An operation that fails without determining the schema's state, such as
-// one whose context is cancelled, leaves Ready where it stood.
 func TestReady_SurvivesAnAbortedOperation(t *testing.T) {
 	s, _ := newService(t, clean()...)
 	if err := s.Start(context.Background()); err != nil || !s.Ready() {
@@ -476,13 +424,11 @@ func TestReady_SurvivesAnAbortedOperation(t *testing.T) {
 	}
 }
 
-// A service a status found behind becomes ready again once the schema is
-// corrected out of band: Ready verifies it.
 func TestReady_ReverifiesACorrectedSchema(t *testing.T) {
 	s, rec := newService(t, slices.Concat(
-		clean(), // Start
-		[]sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})}, // Status: behind
-		current(), // Ready's verify: corrected
+		clean(),
+		[]sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})},
+		current(),
 	)...)
 	ctx := context.Background()
 	if err := s.Start(ctx); err != nil {
@@ -499,8 +445,6 @@ func TestReady_ReverifiesACorrectedSchema(t *testing.T) {
 	}
 }
 
-// Ready's verify runs at most once per interval: a second probe inside it
-// reports not ready without reading the schema again.
 func TestReady_ReverifyIsThrottled(t *testing.T) {
 	behind := []sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})}
 	s, rec := newService(t, slices.Concat(clean(), behind, behind)...)
@@ -520,8 +464,6 @@ func TestReady_ReverifyIsThrottled(t *testing.T) {
 	}
 }
 
-// behindService is a started service a status found behind, so its Ready
-// probes.
 func behindService(t *testing.T) *admin.Service {
 	t.Helper()
 	s, _ := newService(t, slices.Concat(
@@ -536,7 +478,6 @@ func behindService(t *testing.T) *admin.Service {
 	return s
 }
 
-// Concurrent probes of a not-ready service verify the schema once.
 func TestReady_ConcurrentProbesVerifyOnce(t *testing.T) {
 	s := behindService(t)
 	var probes atomic.Int32
@@ -559,14 +500,12 @@ func TestReady_ConcurrentProbesVerifyOnce(t *testing.T) {
 	}
 }
 
-// A probe slower than the interval still excludes a second one: a Ready
-// while it reads reports not ready without verifying.
 func TestReady_ProbesNeverOverlap(t *testing.T) {
 	s := behindService(t)
 	var probes atomic.Int32
 	entered, release := make(chan struct{}), make(chan struct{})
 	admin.SetProbe(s, func(context.Context) error {
-		if probes.Add(1) == 1 { // only the first blocks, so an overlap fails rather than hangs
+		if probes.Add(1) == 1 {
 			entered <- struct{}{}
 			<-release
 		}
@@ -585,13 +524,11 @@ func TestReady_ProbesNeverOverlap(t *testing.T) {
 	}
 }
 
-// An operation that determines the schema while a probe reads wins: the
-// probe's clean verify does not overwrite the status it found behind.
 func TestReady_ProbeYieldsToAConcurrentFinding(t *testing.T) {
 	s, _ := newService(t, slices.Concat(
 		clean(),
-		[]sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})}, // Status: behind
-		[]sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})}, // Status during the probe
+		[]sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})},
+		[]sqltest.Response{exists(true), history([]driver.Value{int64(1), "a", false})},
 	)...)
 	ctx := context.Background()
 	if err := s.Start(ctx); err != nil {
@@ -604,7 +541,7 @@ func TestReady_ProbeYieldsToAConcurrentFinding(t *testing.T) {
 	admin.SetProbe(s, func(context.Context) error {
 		entered <- struct{}{}
 		<-release
-		return nil // a stale finding: the schema was current when it read
+		return nil
 	})
 	done := make(chan bool)
 	go func() { done <- s.Ready() }()
@@ -618,8 +555,6 @@ func TestReady_ProbeYieldsToAConcurrentFinding(t *testing.T) {
 	}
 }
 
-// Before a successful Start, Ready reports the last operation's finding
-// without reading the schema itself.
 func TestReady_NoVerifyBeforeStart(t *testing.T) {
 	s, rec := newService(t)
 	if s.Ready() || len(rec.Calls()) != 0 {
@@ -627,8 +562,6 @@ func TestReady_NoVerifyBeforeStart(t *testing.T) {
 	}
 }
 
-// Ready is the schema's alone: a seeder whose statements do not prepare
-// fails Verify but leaves a current schema ready.
 func TestVerify_SeederFailureLeavesTheSchemaReady(t *testing.T) {
 	f := newFixture(t, testDialect{}, admin.Options{Seeder: &fakeSeeder{}}, clean()...)
 	f.seeder.verifyErr = errors.New("seed statement does not prepare")
@@ -640,8 +573,6 @@ func TestVerify_SeederFailureLeavesTheSchemaReady(t *testing.T) {
 	}
 }
 
-// A refusal the schema's state causes is ErrConflict, with the migrator's
-// sentinel still in the chain.
 func TestUp_DirtySetIsAConflict(t *testing.T) {
 	dirty := history([]driver.Value{int64(1), "a", false}, []driver.Value{int64(2), "b", true})
 	s, _ := newService(t, locked, created, dirty, unlocked, exists(true), dirty)
@@ -654,8 +585,6 @@ func TestUp_DirtySetIsAConflict(t *testing.T) {
 	}
 }
 
-// A failed ping fails Diagnose with the ping's error and reads nothing
-// further.
 func TestDiagnose_FailingPing(t *testing.T) {
 	s, rec := newService(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -669,8 +598,6 @@ func TestDiagnose_FailingPing(t *testing.T) {
 	}
 }
 
-// Diagnose pings through the lifecycle object, reads the server's version
-// through the dialect's capability, and reports the pool's counters.
 func TestDiagnose_ReadsTheVersionThroughTheCapability(t *testing.T) {
 	s, rec := newService(t, sqltest.Response{Columns: []string{"version"}, Rows: [][]driver.Value{{"TestDB 1.0"}}})
 	d, err := s.Diagnose(context.Background())
@@ -685,8 +612,6 @@ func TestDiagnose_ReadsTheVersionThroughTheCapability(t *testing.T) {
 	}
 }
 
-// A dialect without the capability yields diagnostics with no version and
-// no query.
 func TestDiagnose_OmitsTheVersionWithoutTheCapability(t *testing.T) {
 	f := newFixture(t, sqltest.Dialect{}, admin.Options{})
 	d, err := f.service.Diagnose(context.Background())
@@ -698,8 +623,6 @@ func TestDiagnose_OmitsTheVersionWithoutTheCapability(t *testing.T) {
 	}
 }
 
-// The catalog read is the dump for inspection: the namespace, every
-// pattern with its tier and slots, and no I/O.
 func TestCatalog_ReadsThePatternsWithoutIO(t *testing.T) {
 	s, rec := newService(t)
 	c := s.Catalog()
@@ -716,8 +639,6 @@ func TestCatalog_ReadsThePatternsWithoutIO(t *testing.T) {
 	}
 }
 
-// The statements read walks the registry: one domain, its statement's
-// declarations and parameters, and no I/O.
 func TestStatements_ReadTheRegistryWithoutIO(t *testing.T) {
 	s, rec := newService(t)
 	inv := s.Statements()
@@ -733,7 +654,6 @@ func TestStatements_ReadTheRegistryWithoutIO(t *testing.T) {
 	}
 }
 
-// Without a registry the inventory is empty rather than nil.
 func TestStatements_NoRegistryReportsNoDomains(t *testing.T) {
 	pool, _ := sqltest.Open(t)
 	db := sqlate.Wrap(pool, testDialect{})

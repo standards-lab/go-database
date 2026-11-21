@@ -14,3 +14,4 @@ The judgement calls the standards-reviewer applies to go-database, beyond what `
 - `architecture/principles/service-tiers.md`: `DB.Conn`, `Config.Options`, and the `postgres` provider.
 - `architecture/principles/validation-first.md`: `Config.Finalize`, and `admin`'s verbs, which refuse an argument outside their domain before any I/O.
 - `architecture/principles/context-architecture.md`: the README and each `doc.go` are the homes.
+- `architecture/principles/comments.md`: every comment is one of the five kinds, in source, tests, scripts, and every configuration file (TOML, YAML, `.gitignore`); a doc comment on an unexported identifier or a test function is not package documentation.
