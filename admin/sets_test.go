@@ -15,8 +15,6 @@ import (
 	"github.com/standards-lab/sqlate/sqltest"
 )
 
-// base is a shipped set beneath the consumer's own: one transactional
-// migration over its own history table.
 var base = migrate.Set{
 	Name:  "base",
 	Table: "base_version",
@@ -25,31 +23,23 @@ var base = migrate.Set{
 	},
 }
 
-// twoSets is the migrator every test here administers: base, then the
-// consumer's set "app" over the default table.
 var twoSets = []migrate.Set{base, {Name: "app", Migrations: set}}
 
-// baseApplied is base's history, clean and complete.
 func baseApplied() sqltest.Response {
 	return history([]driver.Value{int64(1), "base", false})
 }
 
-// bothCurrent is the script of a Status or a Verify over both sets clean
-// and complete.
 func bothCurrent() []sqltest.Response {
 	return []sqltest.Response{exists(true), baseApplied(), exists(true), applied()}
 }
 
-// applyingBoth is the script of an Up over an empty database: the lock,
-// both history tables read empty, base's migration, app's two, and the
-// unlock.
 func applyingBoth() []sqltest.Response {
 	return []sqltest.Response{
 		locked,
 		created, history(), created, history(),
-		{}, {}, // base 1: up, insert
-		{}, {}, // app 1: up, insert
-		{}, {}, {}, // app 2: dirty, up, clean
+		{}, {},
+		{}, {},
+		{}, {}, {},
 		unlocked,
 	}
 }
@@ -59,8 +49,6 @@ func newSetsService(t *testing.T, opts admin.Options, responses ...sqltest.Respo
 	return newSetsFixture(t, twoSets, testDialect{}, opts, responses...)
 }
 
-// Status reports one entry per set, in declared order, each with its own
-// table, head, latest, and pending versions; one pending set clears Ready.
 func TestSets_StatusReportsEverySet(t *testing.T) {
 	f := newSetsService(t, admin.Options{},
 		exists(true), baseApplied(), exists(true), history([]driver.Value{int64(1), "a", false}))
@@ -80,14 +68,12 @@ func TestSets_StatusReportsEverySet(t *testing.T) {
 	}
 }
 
-// Start on an empty database logs each set's pending versions before it
-// applies them, then each set's head once current.
 func TestSets_StartLogsPendingBySet(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	responses := slices.Concat(
-		[]sqltest.Response{exists(false)},                // Verify stops at base
-		[]sqltest.Response{exists(false), exists(false)}, // the pending read
+		[]sqltest.Response{exists(false)},
+		[]sqltest.Response{exists(false), exists(false)},
 		applyingBoth(),
 		bothCurrent(),
 	)
@@ -110,18 +96,15 @@ func TestSets_StartLogsPendingBySet(t *testing.T) {
 	}
 }
 
-// Reset reverts the consumer's set before the one it builds on, dropping
-// each history table once its set is reverted, then applies both in
-// declared order.
 func TestSets_ResetRevertsInReverseOrder(t *testing.T) {
 	resetting := []sqltest.Response{
 		locked,
 		created, baseApplied(), created, applied(),
-		{}, {}, {}, // app 2: dirty, down, delete
-		{}, {}, // app 1: down, delete
-		{},     // drop schema_version
-		{}, {}, // base 1: down, delete
-		{}, // drop base_version
+		{}, {}, {},
+		{}, {},
+		{},
+		{}, {},
+		{},
 		unlocked,
 	}
 	responses := slices.Concat(resetting, applyingBoth(), bothCurrent())
@@ -149,21 +132,14 @@ func TestSets_ResetRevertsInReverseOrder(t *testing.T) {
 	}
 }
 
-// A dirty consumer set refuses Up; Force on that set by name clears it
-// without touching the schema or base's history, and Up then completes.
 func TestSets_ForceRepairsTheNamedDirtySet(t *testing.T) {
 	dirtyApp := history([]driver.Value{int64(1), "a", false}, []driver.Value{int64(2), "b", true})
 	responses := slices.Concat(
-		// Up refused at the preflight.
 		[]sqltest.Response{locked, created, baseApplied(), created, dirtyApp, unlocked},
 		[]sqltest.Response{exists(true), baseApplied(), exists(true), dirtyApp},
-		// The status read after the refusal.
 		[]sqltest.Response{exists(true), baseApplied(), exists(true), dirtyApp},
-		// Force app to 1: create, delete above, mark clean (affects the
-		// row, so no insert).
 		[]sqltest.Response{locked, {}, {}, {Affected: 1}, unlocked},
 		[]sqltest.Response{exists(true), baseApplied(), exists(true), history([]driver.Value{int64(1), "a", false})},
-		// Up applies app 2.
 		[]sqltest.Response{locked, created, baseApplied(), created, history([]driver.Value{int64(1), "a", false}), {}, {}, {}, unlocked},
 		bothCurrent(),
 	)
@@ -205,8 +181,6 @@ func TestSets_ForceRepairsTheNamedDirtySet(t *testing.T) {
 	}
 }
 
-// A revert of the set beneath one with applied migrations is refused, and
-// nothing runs against the schema.
 func TestSets_DownBelowAnAppliedSetIsRefused(t *testing.T) {
 	f := newSetsService(t, admin.Options{},
 		slices.Concat(
@@ -227,8 +201,6 @@ func TestSets_DownBelowAnAppliedSetIsRefused(t *testing.T) {
 	}
 }
 
-// A verb that names no set, or one the migrator does not run, is refused
-// before any I/O, ahead of its other arguments.
 func TestSets_UnknownSetRefusedBeforeIO(t *testing.T) {
 	f := newSetsService(t, admin.Options{})
 	ctx := context.Background()
@@ -249,15 +221,13 @@ func TestSets_UnknownSetRefusedBeforeIO(t *testing.T) {
 	}
 }
 
-// With one set pending and another dirty, Start logs nothing as applying:
-// Up refuses the run, and startup fails naming the dirty set.
 func TestSets_StartOverADirtySetLogsNoApply(t *testing.T) {
 	var buf bytes.Buffer
 	dirtyApp := history([]driver.Value{int64(1), "a", false}, []driver.Value{int64(2), "b", true})
 	f := newSetsService(t, admin.Options{Logger: slog.New(slog.NewTextHandler(&buf, nil))},
-		exists(false),                         // Verify stops at base, pending
-		exists(false), exists(true), dirtyApp, // the pending read
-		locked, created, history(), created, dirtyApp, unlocked, // Up refused
+		exists(false),
+		exists(false), exists(true), dirtyApp,
+		locked, created, history(), created, dirtyApp, unlocked,
 	)
 	err := f.service.Start(context.Background())
 	if !errors.Is(err, migrate.ErrDirty) || !strings.Contains(err.Error(), `"app"`) {
@@ -268,8 +238,6 @@ func TestSets_StartOverADirtySetLogsNoApply(t *testing.T) {
 	}
 }
 
-// A history row the set does not carry, as a newer replica leaves it, is
-// Status's error, and it clears a Ready an earlier check had set.
 func TestSets_StatusOverAnUnknownRowClearsReady(t *testing.T) {
 	newer := history([]driver.Value{int64(1), "a", false}, []driver.Value{int64(2), "b", false}, []driver.Value{int64(3), "c", false})
 	f := newSetsService(t, admin.Options{},

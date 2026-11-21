@@ -29,6 +29,8 @@ principles:
 - Swapping the SQL provider is a port. The consumer owns its schema, its migrations, and its
   domain SQL, and those are what a swap rewrites. A library that ships its own migration set,
   such as `blobfs`, owns that set; the consumer declares it beneath its own.
+- The HTTP half of the admin service, the route group and handler, is application code: the
+  reference service builds it, and the template stays engine-free.
 
 ## Packages
 
@@ -50,7 +52,7 @@ principles:
 The repository uses a Go workspace and [mise](https://mise.jdx.dev):
 
 ```
-mise run check      # build, vet, format, fix, tidy, test, and lint every module; writes nothing
+mise run check      # build, vet, format, fix, tidy, test, and lint every module, then lint-context and lint-references; writes nothing
 mise run currency   # report requirements, Go, tools, and actions behind their latest
 mise run upgrade    # upgrade every module's go directive and requirements, and the tools, to their latest
 ```

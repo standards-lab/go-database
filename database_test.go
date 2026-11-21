@@ -15,22 +15,15 @@ import (
 	"github.com/standards-lab/go-database"
 )
 
-// A *DB takes part in a lifecycle.Coordinator's startup, shutdown, and
-// readiness as the Value of a graph.Dependency, with no adapter.
 var (
 	_ lifecycle.Subsystem        = (*database.DB)(nil)
 	_ lifecycle.ReadinessChecker = (*database.DB)(nil)
 )
 
-// stubConnector produces connections that consult its failure flag on every
-// ping, so connectivity can be broken and restored mid-test — including for
-// connections the pool has cached.
 type stubConnector struct {
 	fail atomic.Bool
 }
 
-// errDial and errPing are the stub's driver errors, so a test can match the
-// cause a failure wraps.
 var (
 	errDial = errors.New("dial refused")
 	errPing = errors.New("ping refused")
@@ -132,8 +125,6 @@ func TestNew_AppliesPoolSettings(t *testing.T) {
 	}
 }
 
-// Conn returns the pool New wrapped, and ConnTimeout the configured
-// conn_timeout.
 func TestDB_Accessors(t *testing.T) {
 	cfg := database.Config{Name: "app", ConnTimeout: new(config.Duration(3 * time.Second))}
 	if err := cfg.Finalize(""); err != nil {
@@ -179,7 +170,6 @@ func TestDB_StartFailureWrapsSentinelAndCause(t *testing.T) {
 	if !errors.Is(err, database.ErrConnectionFailed) {
 		t.Errorf("errors.Is(err, ErrConnectionFailed) = false for %v", err)
 	}
-	// The dual wrap keeps the driver's cause legible.
 	if !strings.Contains(err.Error(), "dial refused") {
 		t.Errorf("error = %v, want it to carry the driver cause", err)
 	}
@@ -231,8 +221,6 @@ func TestDB_Ping(t *testing.T) {
 func TestDB_ShutdownBeforeStart(t *testing.T) {
 	db := newTestDB(t, &stubConnector{})
 
-	// Closing a lazy pool that never connected is a clean no-op, so the
-	// drain-after-failed-startup path cannot compound the failure.
 	if err := db.Shutdown(context.Background()); err != nil {
 		t.Errorf("Shutdown before Start = %v, want nil", err)
 	}
@@ -243,8 +231,6 @@ func TestDB_ShutdownAfterFailedStart(t *testing.T) {
 	connector.fail.Store(true)
 	db := newTestDB(t, connector)
 
-	// The Coordinator shuts down a participant whose Start failed; that
-	// Shutdown closes the pool cleanly and leaves the DB not ready.
 	if err := db.Start(context.Background()); err == nil {
 		t.Fatal("Start succeeded against a refusing connector")
 	}

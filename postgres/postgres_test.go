@@ -30,16 +30,12 @@ func finalizedConfig(t *testing.T) database.Config {
 	return cfg
 }
 
-// session is what a client sent the test server: its startup parameters
-// and, answering a cleartext-password request, its password.
 type session struct {
 	params   map[string]string
 	password string
 	err      error
 }
 
-// serve answers every connection on ln as a server that asks for a
-// cleartext password and then refuses it, reporting each session it sees.
 func serve(t *testing.T, ln net.Listener) <-chan session {
 	t.Helper()
 	sessions := make(chan session, 4)
@@ -92,8 +88,6 @@ func handshake(conn net.Conn) session {
 	return s
 }
 
-// connect starts a pool built from cfg against the test server and returns
-// the session the server saw; the server's refusal fails Start.
 func connect(t *testing.T, cfg database.Config, sessions <-chan session) session {
 	t.Helper()
 	if err := cfg.Finalize(""); err != nil {
@@ -119,11 +113,8 @@ func connect(t *testing.T, cfg database.Config, sessions <-chan session) session
 	}
 }
 
-// noTLS keeps the session in cleartext, so the test server reads it.
 var noTLS = map[string]string{"sslmode": "disable"}
 
-// socketDir makes a short directory for a Unix socket, whose path is
-// limited to about a hundred bytes.
 func socketDir(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "pg")
@@ -134,9 +125,6 @@ func socketDir(t *testing.T) string {
 	return dir
 }
 
-// New only builds the pool: a server listening at the configured address
-// has no connection waiting once New returns, and readiness stays false
-// until Start.
 func TestNew_ConstructsWithoutIO(t *testing.T) {
 	ln, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
@@ -154,8 +142,6 @@ func TestNew_ConstructsWithoutIO(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Conn().Close() })
 
-	// A dial completes its handshake into the listener's backlog before it
-	// returns, so an Accept that times out finds that New never dialed.
 	_ = ln.SetDeadline(time.Now().Add(50 * time.Millisecond))
 	if conn, err := ln.Accept(); err == nil {
 		_ = conn.Close()
@@ -166,9 +152,6 @@ func TestNew_ConstructsWithoutIO(t *testing.T) {
 	}
 }
 
-// A TCP host and port reach the server, carrying the user and database,
-// and the password arrives intact whatever characters it holds, since it
-// never passes through the connection URL.
 func TestNew_ConnectsOverTCPWithThePassword(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -190,8 +173,6 @@ func TestNew_ConnectsOverTCPWithThePassword(t *testing.T) {
 	}
 }
 
-// A host that is a path is a Unix-socket directory, and the port, 5432
-// unless set, names the socket file in it.
 func TestNew_UnixSocketHost(t *testing.T) {
 	cases := []struct {
 		name string
@@ -218,8 +199,6 @@ func TestNew_UnixSocketHost(t *testing.T) {
 	}
 }
 
-// Whether a user is required varies by provider and auth mode, so the
-// config leaves it optional and the connection carries the OS user.
 func TestNew_EmptyUserFallsBackToTheOSUser(t *testing.T) {
 	osUser, err := user.Current()
 	if err != nil {
@@ -238,8 +217,6 @@ func TestNew_EmptyUserFallsBackToTheOSUser(t *testing.T) {
 	}
 }
 
-// Finalized is the one check: a config missing any field New reads panics,
-// though its ConnTimeout is set.
 func TestNew_PanicsOnPartlyFinalizedConfig(t *testing.T) {
 	cfg := finalizedConfig(t)
 	cfg.MaxOpenConns = nil
@@ -309,10 +286,6 @@ func TestNew_PanicsOnUnfinalizedConfig(t *testing.T) {
 	_, _ = postgres.New(database.Config{Name: "app"})
 }
 
-// serveTimestamptz answers every connection on ln as a server that admits
-// the login and returns at, as a one-row timestamptz column, for any
-// SELECT, in text through the simple protocol and in binary through the
-// extended one. It reports each connection's failure on the channel.
 func serveTimestamptz(t *testing.T, ln net.Listener, at time.Time) <-chan error {
 	t.Helper()
 	errs := make(chan error, 4)
@@ -344,7 +317,6 @@ func answerTimestamptz(conn net.Conn, at time.Time) error {
 		return err
 	}
 	be.Send(&pgproto3.AuthenticationOk{})
-	// pgx runs the simple protocol only on a server reporting these.
 	be.Send(&pgproto3.ParameterStatus{Name: "standard_conforming_strings", Value: "on"})
 	be.Send(&pgproto3.ParameterStatus{Name: "client_encoding", Value: "UTF8"})
 	be.Send(&pgproto3.BackendKeyData{ProcessID: 1, SecretKey: []byte{0, 0, 0, 1}})
@@ -415,10 +387,6 @@ func answerTimestamptz(conn net.Conn, at time.Time) error {
 	}
 }
 
-// Every time a workspace library returns is in time.UTC: a timestamptz
-// read through the pool New builds is the UTC instant, not that instant in
-// time.Local (Europe/London, from TestMain), in pgx's text format and in
-// its binary one.
 func TestNew_ReadsTimestamptzInUTC(t *testing.T) {
 	want := time.Date(2026, 7, 1, 12, 30, 15, 123456000, time.UTC)
 	cases := []struct {

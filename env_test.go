@@ -6,8 +6,6 @@ import (
 	"github.com/standards-lab/go-database"
 )
 
-// Every name derives from the prefix through config.EnvName with the
-// "database" segment; this pins the full set a consumer binds to.
 func TestNewEnv(t *testing.T) {
 	env := database.NewEnv("app")
 

@@ -16,8 +16,6 @@ import (
 	"github.com/standards-lab/sqlate/query"
 )
 
-// reverifyInterval is the least time between two of Ready's own schema
-// verifications.
 const reverifyInterval = 5 * time.Second
 
 var (
@@ -110,15 +108,9 @@ type Service struct {
 	ready    atomic.Bool
 	started  atomic.Bool
 
-	// mu serializes writes of ready with gen. Every write except a probe's
-	// increments gen, so a probe stores its finding only when no operation
-	// determined the schema while it read.
 	mu  sync.Mutex
 	gen uint64
 
-	// probe is Ready's schema verification; probing marks one in flight,
-	// and probed is when the last began, measured from base on the
-	// monotonic clock.
 	probe   func(context.Context) error
 	probing atomic.Bool
 	base    time.Time
@@ -150,7 +142,7 @@ func New(pool *database.DB, db *sqlate.DB, m *migrate.Migrator, c *query.Catalog
 		seeder: opts.Seeder, registry: opts.Registry, logger: logger, seed: opts.Seed,
 		onReset: opts.OnReset, probe: m.Verify, base: time.Now(),
 	}
-	s.probed.Store(int64(-reverifyInterval)) // the first probe is not throttled
+	s.probed.Store(int64(-reverifyInterval))
 	return s
 }
 
@@ -164,7 +156,7 @@ func (s *Service) Ready() bool {
 		return s.ready.Load()
 	}
 	if !s.probing.CompareAndSwap(false, true) {
-		return false // another probe is verifying
+		return false
 	}
 	defer s.probing.Store(false)
 	now := time.Since(s.base)
@@ -179,7 +171,7 @@ func (s *Service) Ready() bool {
 	defer cancel()
 	if s.probe(ctx) == nil {
 		s.mu.Lock()
-		if s.gen == gen { // no operation determined the schema meanwhile
+		if s.gen == gen {
 			s.ready.Store(true)
 		}
 		s.mu.Unlock()
@@ -207,9 +199,8 @@ func (s *Service) Start(ctx context.Context) error {
 		err = s.migrator.Verify(ctx)
 	}
 	if err != nil {
-		return conflict(err) // the lifecycle prefixes the service name
+		return conflict(err)
 	}
-	// A clean, complete history puts every set at its latest version.
 	for _, l := range s.migrator.Layers() {
 		s.logger.InfoContext(ctx, "schema current", "set", l.Name(), "version", latest(l.Migrations()))
 	}
@@ -230,9 +221,6 @@ func (s *Service) Start(ctx context.Context) error {
 	return nil
 }
 
-// logPending logs each set's pending versions, so an operator sees what a
-// start applies before it runs. A dirty set logs nothing: Up refuses the
-// run, and its error names the set.
 func (s *Service) logPending(ctx context.Context) error {
 	sets, err := s.migrator.Status(ctx)
 	if err != nil {
@@ -311,9 +299,6 @@ func (s *Service) Reset(ctx context.Context, state string) (Transition, error) {
 	return Transition{State: state, Schema: st, Seeded: n}, nil
 }
 
-// state resolves a seed operation's state name, the configured one when it
-// is empty, and refuses it before any I/O: no seeder or no name is
-// [ErrSeedDisabled], an undeclared name [ErrUnknownState].
 func (s *Service) state(state string) (string, error) {
 	if state == "" {
 		state = s.seed
@@ -321,7 +306,6 @@ func (s *Service) state(state string) (string, error) {
 	return state, s.checkState(state)
 }
 
-// checkState is the refusal every seed operation applies before I/O.
 func (s *Service) checkState(state string) error {
 	if s.seeder == nil || state == "" {
 		return ErrSeedDisabled
@@ -424,8 +408,6 @@ func (s *Service) Force(ctx context.Context, set string, version int) (Status, e
 	return s.after(ctx, l.Force(ctx, version))
 }
 
-// layer resolves a verb's set name, refusing an undeclared one with
-// [ErrUnknownSet] before any I/O.
 func (s *Service) layer(set string) (migrate.Layer, error) {
 	l, ok := s.migrator.Layer(set)
 	if !ok {
@@ -434,9 +416,6 @@ func (s *Service) layer(set string) (migrate.Layer, error) {
 	return l, nil
 }
 
-// after returns the state following a mutating operation, or the
-// operation's error once the status is read, so Ready follows the schema
-// the operation left behind.
 func (s *Service) after(ctx context.Context, err error) (Status, error) {
 	if err != nil {
 		_, _ = s.Status(ctx)
@@ -445,10 +424,6 @@ func (s *Service) after(ctx context.Context, err error) (Status, error) {
 	return s.Status(ctx)
 }
 
-// settle records a determined schema state in the ready flag: true on a
-// clean, current schema, false on a dirty, pending, or unrecognized one.
-// Any other error, such as a cancelled context or a lost connection,
-// determines nothing and leaves the flag.
 func (s *Service) settle(err error) {
 	switch {
 	case err == nil:
@@ -458,8 +433,6 @@ func (s *Service) settle(err error) {
 	}
 }
 
-// setReady records an operation's determined schema state, counting the
-// write so a probe in flight does not overwrite it.
 func (s *Service) setReady(ready bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -467,8 +440,6 @@ func (s *Service) setReady(ready bool) {
 	s.ready.Store(ready)
 }
 
-// conflict wraps [ErrConflict] around a refusal the schema's state causes,
-// once.
 func conflict(err error) error {
 	switch {
 	case err == nil, errors.Is(err, ErrConflict):
@@ -547,8 +518,6 @@ func (s *Service) Diagnose(ctx context.Context) (Diagnostics, error) {
 	return d, nil
 }
 
-// serverVersion runs the dialect's version statement and returns its one
-// text column; no row is an empty version.
 func (s *Service) serverVersion(ctx context.Context, statement string) (string, error) {
 	rows, err := s.db.QueryContext(ctx, statement)
 	if err != nil {
@@ -564,7 +533,6 @@ func (s *Service) serverVersion(ctx context.Context, statement string) (string, 
 	return version, s.db.MapError(rows.Err())
 }
 
-// versions lists the migrations' versions, empty rather than nil.
 func versions(ms []migrate.Migration) []int {
 	out := make([]int, 0, len(ms))
 	for _, m := range ms {
@@ -573,7 +541,6 @@ func versions(ms []migrate.Migration) []int {
 	return out
 }
 
-// latest is the version of a set's last migration, 0 for an empty set.
 func latest(ms []migrate.Migration) int {
 	if len(ms) == 0 {
 		return 0

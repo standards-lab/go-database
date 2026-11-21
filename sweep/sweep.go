@@ -120,7 +120,7 @@ type Options struct {
 // its readiness is the reactor's alone.
 type Sweeper struct {
 	db     *sqlate.DB
-	locker sqlate.TryLocker // nil when unlocked
+	locker sqlate.TryLocker
 	regs   []Registration
 	names  map[string]bool
 	tick   time.Duration
@@ -128,10 +128,8 @@ type Sweeper struct {
 	logger *slog.Logger
 	wake   *reactor.Waker
 	r      *reactor.Reactor[time.Time]
-	now    func() time.Time // the clock that bounds a cycle; time.Now outside tests
+	now    func() time.Time
 
-	// mu guards the due state: each reclaimer's last cycle, by its
-	// delivery's time, and the reclaimers nudged since their last cycle.
 	mu     sync.Mutex
 	last   map[string]time.Time
 	nudged map[string]bool
@@ -219,8 +217,6 @@ func (s *Sweeper) Nudge(name string) {
 	s.nudge(name)
 }
 
-// nudge is [Sweeper.Nudge] for a name known to be registered: it marks
-// name due and asks the reactor for a delivery.
 func (s *Sweeper) nudge(name string) {
 	s.mu.Lock()
 	s.nudged[name] = true
@@ -242,14 +238,6 @@ func (s *Sweeper) Ready() bool { return s.r.Ready() }
 // Err yields the reactor's failure while running; see [reactor.Reactor.Err].
 func (s *Sweeper) Err() <-chan error { return s.r.Err() }
 
-// handle is the reactor's Func: it runs the cycle of each reclaimer due at
-// now, in the list's order, until the drain begins. A cycle that yields
-// leaves its reclaimer due and the waker nudged, so the reclaimers after it
-// run in this delivery and every due reclaimer runs again, in order, in the
-// next: each gets at most one interval in turn. It returns an error
-// only when ctx ends, which is the drain's cancellation, so that error is
-// the reactor's; every other failure is reported and left to the next
-// cycle, and the reactor continues.
 func (s *Sweeper) handle(ctx context.Context, now time.Time) error {
 	drain := reactor.Draining(ctx)
 	for _, reg := range s.regs {
@@ -269,8 +257,6 @@ func (s *Sweeper) handle(ctx context.Context, now time.Time) error {
 	return nil
 }
 
-// due reports whether reg is due at now, and if so consumes its nudge and
-// records now as its last cycle.
 func (s *Sweeper) due(reg Registration, now time.Time) bool {
 	s.mu.Lock()
 	nudged := s.nudged[reg.Name]
@@ -285,16 +271,6 @@ func (s *Sweeper) due(reg Registration, now time.Time) bool {
 	return true
 }
 
-// cycle claims reg's lock and runs its passes while one reports more,
-// whatever its error, which is reported and never ends the cycle, for at
-// most reg's interval from the claim. A cycle still reporting more once
-// the interval has passed yields: it marks reg nudged, as [Sweeper.Nudge]
-// does, so reg stays due and the delivery that nudge earns resumes its
-// backlog without waiting out an interval. A lock held elsewhere runs no
-// pass and reports nothing; a failure to claim it is logged at warn and
-// leaves the work to the next cycle. The claim is released when the cycle
-// ends, on every path. It returns ctx's error once ctx ends, and nil
-// otherwise.
 func (s *Sweeper) cycle(ctx context.Context, drain <-chan struct{}, reg Registration) error {
 	if s.locker != nil {
 		release, claimed, err := s.claim(ctx, reg.Name)
@@ -313,34 +289,22 @@ func (s *Sweeper) cycle(ctx context.Context, drain <-chan struct{}, reg Registra
 		}
 		p, ran := s.pass(ctx, drain, reg)
 		if err := ctx.Err(); err != nil {
-			// The drain's cancellation ended the pass: its outcome is the
-			// cancellation's, which the reactor reports, not the pass's.
 			return err
 		}
 		if !ran {
 			return nil
 		}
 		s.opts.OnPass(ctx, p)
-		// more alone decides: a failed pass that reports more is followed
-		// by another, since a reclaimer's passes are idempotent. A gate
-		// failure ran no pass, so it reports no more and ends the cycle.
 		if !p.More {
 			return nil
 		}
 		if s.now().Sub(start) >= reg.Policy.Interval {
-			// Yield: reg stays due, and the delivery the nudge earns
-			// resumes its backlog after the reclaimers behind it.
 			s.nudge(reg.Name)
 			return nil
 		}
 	}
 }
 
-// claim pins a connection and tries the lock "sweep.<name>" on it. It
-// returns the release, which unlocks and then closes the connection, and
-// whether the lock was taken; a lock not taken leaves nothing held. Its
-// error is ctx's alone: any other failure is logged and reported as not
-// claimed.
 func (s *Sweeper) claim(ctx context.Context, name string) (release func(), claimed bool, err error) {
 	lock := "sweep." + name
 	conn, err := s.db.Conn(ctx)
@@ -356,21 +320,14 @@ func (s *Sweeper) claim(ctx context.Context, name string) (release func(), claim
 		return nil, false, nil
 	}
 	return func() {
-		// The unlock outlives ctx, so a cycle the drain cancelled still
-		// releases its claim before the connection returns to the pool.
 		if err := s.locker.Unlock(context.WithoutCancel(ctx), conn, lock); err != nil {
 			s.logger.WarnContext(ctx, "sweep release failed", "reclaimer", name, "error", s.db.MapError(err))
-			// A session whose unlock failed may still hold the lock;
-			// discard it rather than return it to the pool, so the
-			// session's end releases it.
 			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		}
 		_ = conn.Close()
 	}, true, nil
 }
 
-// claimFailed logs a failure to claim name's lock, unless ctx ended, in
-// which case it returns ctx's error.
 func (s *Sweeper) claimFailed(ctx context.Context, name string, err error) error {
 	if cerr := ctx.Err(); cerr != nil {
 		return cerr
@@ -379,9 +336,6 @@ func (s *Sweeper) claimFailed(ctx context.Context, name string, err error) error
 	return nil
 }
 
-// pass runs one pass of reg, holding the gate shared when the sweeper has
-// one. ran is false when the wait on the gate was ended by ctx or the
-// drain, which runs no pass and reports nothing.
 func (s *Sweeper) pass(ctx context.Context, drain <-chan struct{}, reg Registration) (p Pass, ran bool) {
 	p.Name = reg.Name
 	start := time.Now()
@@ -401,8 +355,6 @@ func (s *Sweeper) pass(ctx context.Context, drain <-chan struct{}, reg Registrat
 	return p, true
 }
 
-// share holds the gate shared, waiting until ctx ends or the drain begins.
-// ended reports a wait either ended, which holds nothing.
 func (s *Sweeper) share(ctx context.Context, drain <-chan struct{}) (release func(), ended bool, err error) {
 	wait, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -425,7 +377,6 @@ func (s *Sweeper) share(ctx context.Context, drain <-chan struct{}) (release fun
 	return release, false, nil
 }
 
-// closed reports whether ch is closed; a nil ch never is.
 func closed(ch <-chan struct{}) bool {
 	select {
 	case <-ch:
@@ -435,9 +386,6 @@ func closed(ch <-chan struct{}) bool {
 	}
 }
 
-// logPasses returns the default hook: a pass that returned an error logged
-// at warn on logger as "sweep pass failed", with the reclaimer, whether it
-// reported more, its duration, and the error; any other pass not at all.
 func logPasses(logger *slog.Logger) Hook {
 	return func(ctx context.Context, p Pass) {
 		if p.Err == nil {

@@ -10,8 +10,6 @@ import (
 	"github.com/standards-lab/go-database"
 )
 
-// A connectivity failure from Start or Ping carries the sentinel, which is
-// sqlate's, and the driver's own error, each matchable through errors.Is.
 func TestErrConnectionFailed_DualWrapFromStartAndPing(t *testing.T) {
 	connector := &stubConnector{}
 	db := newTestDB(t, connector)

@@ -11,23 +11,7 @@ This context records only working knowledge the code and the README do not expre
 
 ## Capability map
 
-The built packages are authoritative through their code and `doc.go`. Detail for what is unbuilt
-is added when it is about to be built.
-
-- **database** wraps the pool: configuration, lifecycle, readiness, and the connectivity
-  sentinels. Built.
-- **admin** is the database admin service over `sqlate`, generic over the consumer's migrator,
-  seeder, registry, catalog, and pool. `admin/doc.go` states its construction, its verbs, its
-  startup sequence, its errors, and its migration sets: one service administers every set its
-  migrator runs. Built.
-- **sweep** is the general sweeper: it runs a service's reclaimers as one go-core reactor, each
-  cycle under the advisory lock `sweep.<name>` and bounded by its interval. `sweep/doc.go` states
-  its construction, cycles, and drain. Built.
-- **postgres** is the PostgreSQL provider: it constructs the pool over pgx's `database/sql`
-  adapter from the configuration block, and supplies no dialect — the dialect is
-  `sqlate/postgres`'s. Built.
-
-`sqlate` (`github.com/standards-lab/sqlate`), a standalone library below this one, owns
-statements, sessions, transactions, the dialect, migrations, and the scripted test driver. The
-HTTP half of the admin service — the route group and handler — is application code: the
-reference service builds it, and the template stays engine-free.
+- **database** (built): [doc.go](../doc.go).
+- **admin** (built): [admin/doc.go](../admin/doc.go).
+- **sweep** (built): [sweep/doc.go](../sweep/doc.go).
+- **postgres** (built): [postgres/doc.go](../postgres/doc.go).
