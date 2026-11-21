@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # currency reports every dependency, toolchain, and pin that trails its latest
 # release, one line each, and exits non-zero when it reports any. It reads the
-# network and writes nothing. Run it through `mise run currency`.
+# network and writes nothing. Run it through `mise run currency`. The actions it
+# checks are those of the project root's workflows and, when the repository nests
+# the project in a subdirectory, of the git top-level's.
 #
 # Each scan captures its command's output in a variable before reading it, so
 # under set -e a scan command that fails (a go list missing a go.sum entry)
@@ -56,10 +58,10 @@ report_outdated_mise_tools() {
 }
 
 report_outdated_actions() {
-	local root top actions uses action pin repo latest
+	local root top workflows actions uses action pin repo latest
 	root=$(pwd -P)
 	top=$(git rev-parse --show-toplevel 2>/dev/null || echo "$root")
-	local workflows=("$root"/.github/workflows/*.yml)
+	workflows=("$root"/.github/workflows/*.yml)
 	[ "$top" = "$root" ] || workflows+=("$top"/.github/workflows/*.yml)
 	actions=$(matches 'uses: *[^ ]*@[^ ]*' "${workflows[@]}" | sed 's/uses: *//' | sort -u)
 	for uses in $actions; do

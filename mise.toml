@@ -34,9 +34,9 @@ for lint in lint-context lint-references; do
   if ! command -v "$lint" >/dev/null; then
     echo "FAIL: $lint is not on PATH; run mise install" >&2
     fail=1
-    continue
+  elif ! "$lint"; then
+    fail=1
   fi
-  "$lint" || fail=1
 done
 exit "$fail"
 '''
@@ -46,7 +46,7 @@ description = "Report every requirement, Go version, tool, and action pin behind
 run = "scripts/currency.sh"
 
 [tasks.upgrade]
-description = "Upgrade every module's go directive and direct requirements and the local mise tools to their latest, rewriting go.mod and mise.toml"
+description = "Upgrade every module's go directive to the current Go minor, with no toolchain line, and its direct requirements and the local mise tools to their latest, rewriting go.mod and mise.toml"
 run = '''
 set -eu
 export GOWORK=off
