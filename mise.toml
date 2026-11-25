@@ -7,9 +7,11 @@ task.run_auto_install = false
 go = "1.27.4"
 golangci-lint = "2.15.0"
 jq = "1.8.2"
+"aqua:google/go-containerregistry" = "0.22.1"
 
 [env]
 GO_MODULES = ". postgres postgres/pgvector"
+GO_DATABASE_DSN = "postgres://app:app@127.0.0.1:{{ get_env(name='POSTGRES_PORT', default='5438') }}/app?sslmode=disable"
 
 [tasks.check]
 description = "Build, vet, format, fix, tidy, test, and lint every module, then run lint-context and lint-references; writes nothing"
@@ -42,7 +44,7 @@ exit "$fail"
 '''
 
 [tasks.currency]
-description = "Report every requirement, Go version, tool, and action pin behind its latest; writes nothing"
+description = "Report every requirement, Go version, tool, action pin, image tag, and Dockerfile source ARG behind its latest; writes nothing"
 run = "scripts/currency.sh"
 
 [tasks.upgrade]
@@ -115,3 +117,11 @@ for mod in $GO_MODULES; do
   (cd "$mod" && golangci-lint run ./...)
 done
 '''
+
+[tasks."db:up"]
+description = "Build and start the compose PostgreSQL and wait until it is healthy"
+run = "docker compose up -d --wait --build"
+
+[tasks."db:down"]
+description = "Stop the compose PostgreSQL, discarding its data"
+run = "docker compose down"

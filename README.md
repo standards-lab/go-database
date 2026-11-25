@@ -61,9 +61,18 @@ The repository uses a Go workspace and [mise](https://mise.jdx.dev):
 
 ```
 mise run check      # build, vet, format, fix, tidy, test, and lint every module, then lint-context and lint-references; writes nothing
-mise run currency   # report requirements, Go, tools, and actions behind their latest
+mise run currency   # report requirements, Go, tools, actions, images, and Dockerfile source ARGs behind their latest
 mise run upgrade    # upgrade every module's go directive and requirements, and the tools, to their latest
+mise run db:up      # build and start the compose PostgreSQL and wait until it is healthy
+mise run db:down    # stop PostgreSQL, discarding its data
 ```
+
+`compose.yml` runs PostgreSQL with pgvector on port 5438; `POSTGRES_PORT` moves it, and
+`GO_DATABASE_DSN` in `mise.toml` follows it. The service builds from
+`compose/postgres/Dockerfile`, a copy of sqlate's canonical PostgreSQL image: its `FROM` line is
+the one image pin, `ARG PGVECTOR_VERSION` the extension's, and `mise run currency` reports either
+when it trails its latest. The stack is a test-only harness that keeps its data on tmpfs, so every
+`db:up` starts empty.
 
 ## License
 
