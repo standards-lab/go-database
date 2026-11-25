@@ -10,7 +10,11 @@ import (
 )
 
 func TestParseMetric_ResolvesEachMetricByItsName(t *testing.T) {
-	for _, want := range sqlvector.Metrics() {
+	metrics := sqlvector.Metrics()
+	if len(metrics) == 0 {
+		t.Fatal("sqlate's metric table is empty")
+	}
+	for _, want := range metrics {
 		got, err := pgvector.ParseMetric(want.Name)
 		if err != nil {
 			t.Errorf("ParseMetric(%q): %v", want.Name, err)

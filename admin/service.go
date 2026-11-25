@@ -149,10 +149,10 @@ func New(pool *database.DB, db *sqlate.DB, m *migrate.Migrator, c *query.Catalog
 
 // Ready reports the schema as the last operation that determined it found
 // it: every set's history clean and current, and every extension
-// declaration matched. Once Start has succeeded, a
-// not-ready service re-verifies the schema itself, one probe at a time, at
-// most once per five seconds, and bounded by the pool's conn_timeout. A
-// true Ready is not re-checked.
+// declaration matched. Once Start has succeeded, a not-ready service
+// re-verifies the schema itself, one probe at a time, at most once per five
+// seconds, and bounded by the pool's conn_timeout. A true Ready is not
+// re-checked.
 func (s *Service) Ready() bool {
 	if s.ready.Load() || !s.started.Load() {
 		return s.ready.Load()
@@ -183,8 +183,8 @@ func (s *Service) Ready() bool {
 
 // Start refuses an undeclared Options.Seed, brings every extension
 // declaration and every set to its head (logging the pending extensions and
-// migrations first), verifies the seeder's statements,
-// and applies the configured seed set; the service is ready once all pass.
+// migrations first), verifies the seeder's statements, and applies the
+// configured seed set; the service is ready once all pass.
 func (s *Service) Start(ctx context.Context) error {
 	if s.seed != "" {
 		if err := s.checkState(s.seed); err != nil {
@@ -329,7 +329,8 @@ func (s *Service) checkState(state string) error {
 }
 
 // Verify checks that every extension declaration matches the database and
-// every set's history is clean and current and, when they are, that the seeder's statements prepare; the error names the set or
+// every set's history is clean and current and, when they are, that the
+// seeder's statements prepare; the error names the extension, set, or
 // statement at fault.
 func (s *Service) Verify(ctx context.Context) error {
 	err := s.migrator.Verify(ctx)

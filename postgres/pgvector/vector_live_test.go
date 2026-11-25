@@ -60,15 +60,14 @@ func TestLive_EachMetricOrdersItsOwnNearestRow(t *testing.T) {
 	probe := pgvector.NewVector([]float32{1, 0})
 	nearest := map[string]string{"l2": "close", "cosine": "aligned", "inner product": "long"}
 
-	for _, m := range sqlvector.Metrics() {
-		t.Run(m.Name, func(t *testing.T) {
-			want, ok := nearest[m.Name]
-			if !ok {
-				t.Fatalf("no expected nearest row for metric %q", m.Name)
-			}
-			metric, err := vecmetric.ParseMetric(m.Name)
+	if got := len(sqlvector.Metrics()); got != len(nearest) {
+		t.Fatalf("sqlate has %d metrics, the test expects a nearest row for %d", got, len(nearest))
+	}
+	for name, want := range nearest {
+		t.Run(name, func(t *testing.T) {
+			metric, err := vecmetric.ParseMetric(name)
 			if err != nil {
-				t.Fatalf("ParseMetric(%q): %v", m.Name, err)
+				t.Fatalf("ParseMetric(%q): %v", name, err)
 			}
 			q := "SELECT name FROM item ORDER BY embedding " + metric.Operator + " $1 LIMIT 1"
 			if got := text(t, d.Pool, q, probe); got != want {
