@@ -14,7 +14,7 @@ GO_MODULES = ". postgres postgres/pgvector"
 GO_DATABASE_DSN = "postgres://app:app@127.0.0.1:{{ get_env(name='POSTGRES_PORT', default='5438') }}/app?sslmode=disable"
 
 [tasks.check]
-description = "Build, vet, format, fix, tidy, test, and lint every module, then run lint-context and lint-references; writes nothing"
+description = "Build, vet, format, fix, tidy, test, and lint every module, vetting, fixing, and linting the integration tier with its tag but running only the unit tier, then run lint-context and lint-references; writes nothing"
 run = '''
 set -eu
 export GOWORK=off
@@ -22,13 +22,13 @@ for mod in $GO_MODULES; do
   echo "check: $mod"
   cd "$MISE_PROJECT_ROOT/$mod"
   go build ./...
-  go vet ./...
+  go vet -tags integration ./...
   unformatted=$(gofmt -l .)
   if [ -n "$unformatted" ]; then echo "gofmt: unformatted files:"; echo "$unformatted"; exit 1; fi
-  go fix -diff ./...
+  go fix -diff -tags integration ./...
   go mod tidy -diff
   go test -race ./...
-  golangci-lint run ./...
+  golangci-lint run --build-tags integration ./...
 done
 cd "$MISE_PROJECT_ROOT"
 fail=0
@@ -116,6 +116,22 @@ for mod in $GO_MODULES; do
   echo "==> lint: $mod"
   (cd "$mod" && golangci-lint run ./...)
 done
+'''
+
+[tasks.integration]
+description = "Run the integration tier of postgres/pgvector against the PostgreSQL named by GO_DATABASE_DSN"
+run = '''
+cd postgres/pgvector
+go test -race -tags integration -count=1 ./...
+'''
+
+[tasks.acceptance]
+description = "The one-shot engine proof: db:up, integration, then db:down whatever the result, printing the stack's log on failure"
+run = '''
+set -e
+trap 'rc=$?; [ $rc -eq 0 ] || docker compose logs; mise run db:down; exit $rc' EXIT
+mise run db:up
+mise run integration
 '''
 
 [tasks."db:up"]

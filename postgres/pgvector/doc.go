@@ -6,9 +6,11 @@
 //   - [ErrUnknownMetric], the error a name outside the table wraps
 //
 // The package imports only the standard library and sqlate's
-// postgres/pgvector, and declares no type of its own. Importing this module
-// is limited the way a provider's is: the composition root, the migrations,
-// and the packages the application's design documentation declares.
+// postgres/pgvector, and declares no type of its own; pgvector-go,
+// go-database, and sqlate's postgres are requirements of its integration
+// tests only. Importing this module is limited the way a provider's is: the
+// composition root, the migrations, and the packages the application's
+// design documentation declares.
 //
 // # Vectors
 //
