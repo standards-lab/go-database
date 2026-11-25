@@ -1,7 +1,7 @@
 # go-database
 
 go-database is an SQL infrastructure library for Standards Lab's Go Elemental standard. It
-holds four things:
+holds five things:
 
 - the connection pool, with its configuration, lifecycle, and readiness
 - the database admin service, built over the `sqlate` library
@@ -26,9 +26,10 @@ principles:
 - The base module depends on the standard library, `go-core`, and `sqlate`; the driver enters a
   consumer's graph only through the `postgres` sub-module, imported once at the composition root.
 - The `postgres/pgvector` sub-module depends on the standard library and sqlate's
-  `postgres/pgvector`; its integration tier alone also requires pgvector-go, the base module, and
-  sqlate's `postgres`, so they enter its `go.mod` as test-only requirements. Importing it is limited the way a provider's is: the composition root, the
-  migrations, and the packages the application's design documentation declares.
+  `postgres/pgvector`. Only its integration tier requires pgvector-go, the base module, and
+  sqlate's `postgres`, so its `go.mod` lists them as test-only requirements. Like a provider, it
+  is imported only by the composition root, the migrations, and the packages the application's
+  design documentation declares.
 - [`sqlate`](https://github.com/standards-lab/sqlate) owns the SQL layer above the pool:
   statements, sessions, transactions, and the dialect. The composition root wraps the pool this
   library constructs with `sqlate.Wrap` and the engine's dialect from `sqlate/postgres`, and the
