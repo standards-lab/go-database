@@ -166,9 +166,14 @@ func newFixture(t *testing.T, d sqlate.Dialect, opts admin.Options, responses ..
 
 func newSetsFixture(t *testing.T, sets []migrate.Set, d sqlate.Dialect, opts admin.Options, responses ...sqltest.Response) fixture {
 	t.Helper()
+	return newMigratorFixture(t, sets, d, migrate.Options{}, opts, responses...)
+}
+
+func newMigratorFixture(t *testing.T, sets []migrate.Set, d sqlate.Dialect, mopts migrate.Options, opts admin.Options, responses ...sqltest.Response) fixture {
+	t.Helper()
 	pool, rec := sqltest.Open(t, responses...)
 	db := sqlate.Wrap(pool, d)
-	m, err := migrate.New(db, sets, migrate.Options{})
+	m, err := migrate.New(db, sets, mopts)
 	if err != nil {
 		t.Fatalf("migrate.New: %v", err)
 	}

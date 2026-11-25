@@ -7,6 +7,27 @@ only; the `postgres` sub-module keeps its own.
 
 ## [Unreleased]
 
+### Added
+
+- `admin.Status.Extensions` (`extensions` in JSON), one `admin.ExtensionStatus` per extension
+  declaration the migrator manages, in declared order: its name, whether it is removed, the
+  installed version and the database's default version (each empty when absent), and whether it
+  is pending. The list is empty, never nil, when no extension is declared.
+- `Service.Start` logs each pending extension as `extension pending; applying`, with its name and
+  its installed and default versions, beside the pending sets before it applies them.
+
+### Changed
+
+- `Status.Ready`, and the service's readiness with it, is false while any extension declaration
+  does not match the database: one pending, one the database does not offer, or one with no
+  update path from its installed version to the default.
+- `migrate.ErrExtensionUnavailable` and `migrate.ErrNoUpdatePath`, from `Service.Start`,
+  `Service.Verify`, and the schema verbs, wrap in `admin.ErrConflict` with the migrate sentinel
+  still in the chain, and mark the service not ready.
+- The `sqlate` requirement is v0.8.0, which adds database extension declarations to `migrate`:
+  `migrate.Options.Extensions`, `Migrator.Extensions`, the `migrate.ExtensionCatalog` dialect
+  capability, and the `ErrExtensionUnavailable` and `ErrNoUpdatePath` sentinels.
+
 ## [v0.12.0] - 2026-11-11
 
 The sweeper's configuration is a trailing Options struct, not variadic option functions:

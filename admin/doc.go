@@ -53,11 +53,13 @@
 // The Service is not a Stopper: it holds nothing the pool's shutdown does
 // not release.
 //
-// [Service.Start] applies pending migrations, verifies the seeder, and
-// applies the configured seed set, idempotently at every start. A dirty
-// set, or a history a set does not carry, fails startup, and a failed Start
-// stops the process, so an operator repairs the schema through the verbs of
-// another replica or starts a process against the corrected database.
+// [Service.Start] applies pending extensions and migrations, verifies the
+// seeder, and applies the configured seed set, idempotently at every start.
+// A dirty set, a history a set does not carry, or a declared extension the
+// database does not offer or cannot update to its default fails startup,
+// and a failed Start stops the process, so an operator repairs the schema
+// through the verbs of another replica or starts a process against the
+// corrected database.
 // [Service.Ready] reports the schema alone, as the last operation that
 // determined it found it; once Start has succeeded, a not-ready service
 // re-verifies at most once per five seconds. A true Ready is not
@@ -71,10 +73,11 @@
 // The schema verbs run the migrator's function of their name, and the seed
 // verbs the seeder's:
 //
-//   - [Service.Verify] checks every set's history and the seeder's
-//     statements.
+//   - [Service.Verify] checks every extension declaration, every set's
+//     history, and the seeder's statements.
 //   - [Service.Status] reads the schema into a [Status]: one [SetStatus]
-//     per set, and one [MigrationInfo] per migration.
+//     per set, one [MigrationInfo] per migration, and one
+//     [ExtensionStatus] per extension declaration.
 //   - [Service.Up] applies every set's pending migrations.
 //   - [Service.Down] reverts, [Service.Steps] applies or reverts, and
 //     [Service.Force] sets the history version of the set each names.
