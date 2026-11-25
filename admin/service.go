@@ -34,8 +34,9 @@ var (
 
 	// ErrConflict reports an operation the schema's state refuses: a dirty
 	// or pending set, a history its set does not carry, a migration with no
-	// down, or a set order the migrator forbids. The migrate sentinel stays
-	// in the chain.
+	// down, a set order the migrator forbids, a pending extension, or a
+	// declared extension the database does not offer or cannot update to
+	// its default version. The migrate sentinel stays in the chain.
 	ErrConflict = errors.New("schema conflict")
 )
 
@@ -147,10 +148,11 @@ func New(pool *database.DB, db *sqlate.DB, m *migrate.Migrator, c *query.Catalog
 }
 
 // Ready reports the schema as the last operation that determined it found
-// it: every set's history clean and current. Once Start has succeeded, a
-// not-ready service re-verifies the schema itself, one probe at a time, at
-// most once per five seconds, and bounded by the pool's conn_timeout. A
-// true Ready is not re-checked.
+// it: every set's history clean and current, and every extension
+// declaration matched. Once Start has succeeded, a not-ready service
+// re-verifies the schema itself, one probe at a time, at most once per five
+// seconds, and bounded by the pool's conn_timeout. A true Ready is not
+// re-checked.
 func (s *Service) Ready() bool {
 	if s.ready.Load() || !s.started.Load() {
 		return s.ready.Load()
@@ -179,9 +181,10 @@ func (s *Service) Ready() bool {
 	return s.ready.Load()
 }
 
-// Start refuses an undeclared Options.Seed, brings every set to its head
-// (logging the pending migrations first), verifies the seeder's statements,
-// and applies the configured seed set; the service is ready once all pass.
+// Start refuses an undeclared Options.Seed, brings every extension
+// declaration and every set to its head (logging the pending extensions and
+// migrations first), verifies the seeder's statements, and applies the
+// configured seed set; the service is ready once all pass.
 func (s *Service) Start(ctx context.Context) error {
 	if s.seed != "" {
 		if err := s.checkState(s.seed); err != nil {
@@ -229,6 +232,15 @@ func (s *Service) logPending(ctx context.Context) error {
 	for _, st := range sets {
 		if st.Dirty {
 			return nil
+		}
+	}
+	exts, err := s.migrator.Extensions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, e := range exts {
+		if e.Pending {
+			s.logger.InfoContext(ctx, "extension pending; applying", "extension", e.Name, "installed", e.Installed, "default", e.Default)
 		}
 	}
 	for _, st := range sets {
@@ -316,8 +328,9 @@ func (s *Service) checkState(state string) error {
 	return nil
 }
 
-// Verify checks that every set's history is clean and current and, when it
-// is, that the seeder's statements prepare; the error names the set or
+// Verify checks that every extension declaration matches the database and
+// every set's history is clean and current and, when they are, that the
+// seeder's statements prepare; the error names the extension, set, or
 // statement at fault.
 func (s *Service) Verify(ctx context.Context) error {
 	err := s.migrator.Verify(ctx)
@@ -331,14 +344,19 @@ func (s *Service) Verify(ctx context.Context) error {
 	return nil
 }
 
-// Status reads every set's state in declared order.
+// Status reads every set's state and every extension declaration's state,
+// each in declared order.
 func (s *Service) Status(ctx context.Context) (Status, error) {
 	sets, err := s.migrator.Status(ctx)
 	if err != nil {
 		s.settle(err)
 		return Status{}, conflict(err)
 	}
-	st := Status{Ready: true, Sets: make([]SetStatus, 0, len(sets))}
+	exts, err := s.migrator.Extensions(ctx)
+	if err != nil {
+		return Status{}, err
+	}
+	st := Status{Ready: true, Sets: make([]SetStatus, 0, len(sets)), Extensions: make([]ExtensionStatus, 0, len(exts))}
 	for i, l := range s.migrator.Layers() {
 		ss := sets[i]
 		out := SetStatus{
@@ -355,6 +373,14 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 			st.Ready = false
 		}
 		st.Sets = append(st.Sets, out)
+	}
+	for _, e := range exts {
+		if !matched(e) {
+			st.Ready = false
+		}
+		st.Extensions = append(st.Extensions, ExtensionStatus{
+			Name: e.Name, Removed: e.Removed, Installed: e.Installed, Default: e.Default, Pending: e.Pending,
+		})
 	}
 	s.setReady(st.Ready)
 	return st, nil
@@ -428,7 +454,8 @@ func (s *Service) settle(err error) {
 	switch {
 	case err == nil:
 		s.setReady(true)
-	case errors.Is(err, migrate.ErrDirty), errors.Is(err, migrate.ErrPending), errors.Is(err, migrate.ErrUnknownVersion):
+	case errors.Is(err, migrate.ErrDirty), errors.Is(err, migrate.ErrPending), errors.Is(err, migrate.ErrUnknownVersion),
+		errors.Is(err, migrate.ErrExtensionUnavailable), errors.Is(err, migrate.ErrNoUpdatePath):
 		s.setReady(false)
 	}
 }
@@ -446,7 +473,8 @@ func conflict(err error) error {
 		return err
 	case errors.Is(err, migrate.ErrDirty), errors.Is(err, migrate.ErrPending),
 		errors.Is(err, migrate.ErrUnknownVersion), errors.Is(err, migrate.ErrNoDown),
-		errors.Is(err, migrate.ErrAboveApplied), errors.Is(err, migrate.ErrBelowPending):
+		errors.Is(err, migrate.ErrAboveApplied), errors.Is(err, migrate.ErrBelowPending),
+		errors.Is(err, migrate.ErrExtensionUnavailable), errors.Is(err, migrate.ErrNoUpdatePath):
 		return fmt.Errorf("%w: %w", ErrConflict, err)
 	}
 	return err
@@ -539,6 +567,13 @@ func versions(ms []migrate.Migration) []int {
 		out = append(out, m.Version)
 	}
 	return out
+}
+
+func matched(e migrate.ExtensionStatus) bool {
+	if e.Removed {
+		return e.Installed == ""
+	}
+	return e.Default != "" && e.Installed == e.Default
 }
 
 func latest(ms []migrate.Migration) int {

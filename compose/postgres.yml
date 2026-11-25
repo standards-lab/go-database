@@ -1,0 +1,7 @@
+services:
+  postgres:
+    build:
+      context: postgres
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5438}:5432"
+    tmpfs: /var/lib/postgresql

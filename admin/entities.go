@@ -32,11 +32,13 @@ type Pool struct {
 	WaitDuration time.Duration `json:"wait_duration"`
 }
 
-// Status is the schema's state: Ready when every set is clean and current,
-// and each set's state in declared order.
+// Status is the schema's state: Ready when every set is clean and current
+// and every extension declaration matches the database, each set's state,
+// and each extension declaration's state, in declared order.
 type Status struct {
-	Ready bool        `json:"ready"`
-	Sets  []SetStatus `json:"sets"`
+	Ready      bool              `json:"ready"`
+	Sets       []SetStatus       `json:"sets"`
+	Extensions []ExtensionStatus `json:"extensions"`
 }
 
 // SetStatus is one migration set's state.
@@ -48,6 +50,20 @@ type SetStatus struct {
 	Dirty      bool            `json:"dirty"`
 	Pending    []int           `json:"pending"`
 	Migrations []MigrationInfo `json:"migrations"`
+}
+
+// ExtensionStatus is one extension declaration's state. A declaration
+// matches the database when its extension is installed at the default
+// version the database offers, or, when Removed, is not installed; Pending
+// marks a mismatch Up resolves, so an extension the database does not offer,
+// or one with no update path to the default, is neither matched nor
+// pending.
+type ExtensionStatus struct {
+	Name      string `json:"name"`
+	Removed   bool   `json:"removed"`
+	Installed string `json:"installed"` // empty when not installed
+	Default   string `json:"default"`   // empty when the database does not offer it
+	Pending   bool   `json:"pending"`
 }
 
 // MigrationInfo describes one migration of a set.

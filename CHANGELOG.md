@@ -3,9 +3,32 @@
 All notable changes to `github.com/standards-lab/go-database` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the module adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). This changelog covers the base module
-only; the `postgres` sub-module keeps its own.
+only; the `postgres` and `postgres/pgvector` sub-modules each keep their own.
 
 ## [Unreleased]
+
+## [v0.13.0] - 2026-11-24
+
+### Added
+
+- `admin.Status.Extensions` (`extensions` in JSON), one `admin.ExtensionStatus` per extension
+  declaration the migrator manages, in declared order: its name, whether it is removed, the
+  installed version and the database's default version (each empty when absent), and whether it
+  is pending. The list is empty, never nil, when no extension is declared.
+- `Service.Start` logs each pending extension as `extension pending; applying`, with its name and
+  its installed and default versions, beside the pending sets before it applies them.
+
+### Changed
+
+- `Status.Ready`, and the service's readiness with it, is false while any extension declaration
+  does not match the database: one pending, one the database does not offer, or one with no
+  update path from its installed version to the default.
+- `migrate.ErrExtensionUnavailable` and `migrate.ErrNoUpdatePath`, from `Service.Start`,
+  `Service.Verify`, and the schema verbs, wrap in `admin.ErrConflict` with the migrate sentinel
+  still in the chain, and mark the service not ready.
+- The `sqlate` requirement is v0.8.0, which adds database extension declarations to `migrate`:
+  `migrate.Options.Extensions`, `Migrator.Extensions`, the `migrate.ExtensionCatalog` dialect
+  capability, and the `ErrExtensionUnavailable` and `ErrNoUpdatePath` sentinels.
 
 ## [v0.12.0] - 2026-11-11
 
@@ -396,7 +419,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.13.0...HEAD
+[v0.13.0]: https://github.com/standards-lab/go-database/compare/v0.12.0...v0.13.0
 [v0.12.0]: https://github.com/standards-lab/go-database/compare/v0.11.0...v0.12.0
 [v0.11.0]: https://github.com/standards-lab/go-database/compare/v0.10.0...v0.11.0
 [v0.10.0]: https://github.com/standards-lab/go-database/compare/v0.9.0...v0.10.0
