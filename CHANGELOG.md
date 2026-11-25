@@ -3,9 +3,11 @@
 All notable changes to `github.com/standards-lab/go-database` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the module adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). This changelog covers the base module
-only; the `postgres` sub-module keeps its own.
+only; the `postgres` and `postgres/pgvector` sub-modules each keep their own.
 
 ## [Unreleased]
+
+## [v0.13.0] - 2026-11-24
 
 ### Added
 
@@ -417,7 +419,8 @@ depends on the standard library and `github.com/standards-lab/go-core v0.1.0`.
   so an unknown field or trailing content in a curated seed file fails the decode. Idempotency
   stays in the load function's SQL, where the conflict target is known.
 
-[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/standards-lab/go-database/compare/v0.13.0...HEAD
+[v0.13.0]: https://github.com/standards-lab/go-database/compare/v0.12.0...v0.13.0
 [v0.12.0]: https://github.com/standards-lab/go-database/compare/v0.11.0...v0.12.0
 [v0.11.0]: https://github.com/standards-lab/go-database/compare/v0.10.0...v0.11.0
 [v0.10.0]: https://github.com/standards-lab/go-database/compare/v0.9.0...v0.10.0

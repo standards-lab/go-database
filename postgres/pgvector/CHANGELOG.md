@@ -7,6 +7,8 @@ changelog covers this sub-module only; the base module and the `postgres` provid
 
 ## [Unreleased]
 
+## [v0.1.0] - 2026-11-24
+
 ### Added
 
 - `ParseMetric` resolves a distance metric name, matched exactly, to its entry in the metric
@@ -14,4 +16,5 @@ changelog covers this sub-module only; the base module and the `postgres` provid
   type. A name outside the table returns an error that wraps `ErrUnknownMetric` and quotes the
   name.
 
-[Unreleased]: https://github.com/standards-lab/go-database/commits/HEAD/postgres/pgvector
+[Unreleased]: https://github.com/standards-lab/go-database/compare/postgres/pgvector/v0.1.0...HEAD
+[v0.1.0]: https://github.com/standards-lab/go-database/releases/tag/postgres/pgvector/v0.1.0
