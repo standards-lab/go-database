@@ -63,8 +63,8 @@ The repository uses a Go workspace and [mise](https://mise.jdx.dev):
 
 ```
 mise run check      # build, vet, format, fix, tidy, test, and lint every module, then lint-context and lint-references; writes nothing
-mise run currency   # report requirements, Go, tools, actions, images, and Dockerfile source ARGs behind their latest
-mise run upgrade    # upgrade every module's go directive and requirements, and the tools, to their latest
+mise run currency   # report tools, Go, requirements, actions, images, and Dockerfile source ARGs behind their latest, but a held one; writes nothing
+mise run upgrade    # move every pin currency reports to its latest, but a held one: tools, then Go and requirements, actions, images, and Dockerfile source ARGs
 mise run db:up      # build and start the compose PostgreSQL and wait until it is healthy
 mise run db:down    # stop PostgreSQL, discarding its data
 mise run integration  # run the integration tier against the running stack
@@ -75,8 +75,11 @@ mise run acceptance   # db:up, integration, then db:down whatever the result; pr
 `GO_DATABASE_DSN` in `mise.toml` follows it. The service builds from
 `compose/postgres/Dockerfile`, a copy of sqlate's canonical PostgreSQL image: its `FROM` line is
 the one image pin, `ARG PGVECTOR_VERSION` the extension's, and `mise run currency` reports either
-when it trails its latest. The stack is a test-only harness that keeps its data on tmpfs, so every
-`db:up` starts empty.
+when it trails its latest; `mise run upgrade` moves it. `mise run currency` and `mise run upgrade`
+are the two modes of `scripts/currency.sh`, `report` and `upgrade`, which run the same scans, so
+`upgrade` moves exactly what `report` lists. A pin named in `mise.toml`'s `HOLDS` list, one
+`<item> <pin>: <reason>` line each, is reported as held and never moved. The stack is a test-only
+harness that keeps its data on tmpfs, so every `db:up` starts empty.
 
 The `postgres/pgvector` module's integration tier sits behind the `integration` build tag and
 runs against the stack: `admin.Start` activating a declared `vector` extension, a `vector`
