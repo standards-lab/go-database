@@ -7,6 +7,12 @@ changelog covers this sub-module only; the base module keeps its own.
 
 ## [Unreleased]
 
+### Changed
+
+- The `go-database` requirement is v0.13.0, which requires `sqlate` v0.8.0 and adds
+  `admin.Status.Extensions`, readiness that follows each declared extension, and the
+  `ErrConflict` mapping of the extension errors. The provider's own API is unchanged.
+
 ## [v0.7.0] - 2026-11-11
 
 ### Changed
