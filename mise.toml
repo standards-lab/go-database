@@ -9,7 +9,7 @@ golangci-lint = "2.15.0"
 jq = "1.8.2"
 
 [env]
-GO_MODULES = ". postgres"
+GO_MODULES = ". postgres postgres/pgvector"
 
 [tasks.check]
 description = "Build, vet, format, fix, tidy, test, and lint every module, then run lint-context and lint-references; writes nothing"

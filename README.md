@@ -7,10 +7,13 @@ holds four things:
 - the database admin service, built over the `sqlate` library
 - the sweeper, which runs a service's reclaimers
 - the Postgres provider
+- the pgvector module, which resolves a configured distance metric
 
 `github.com/standards-lab/go-database` is the base module, holding the `database` package at its
 root and `admin` and `sweep` beside it. `github.com/standards-lab/go-database/postgres` is a
 nested sub-module that pins the driver and is released on its own tags.
+`github.com/standards-lab/go-database/postgres/pgvector` is a nested sub-module that requires
+sqlate's `postgres/pgvector` and is released on its own tags.
 
 ## Standard
 
@@ -22,6 +25,9 @@ principles:
 
 - The base module depends on the standard library, `go-core`, and `sqlate`; the driver enters a
   consumer's graph only through the `postgres` sub-module, imported once at the composition root.
+- The `postgres/pgvector` sub-module depends on the standard library and sqlate's
+  `postgres/pgvector`. Importing it is limited the way a provider's is: the composition root, the
+  migrations, and the packages the application's design documentation declares.
 - [`sqlate`](https://github.com/standards-lab/sqlate) owns the SQL layer above the pool:
   statements, sessions, transactions, and the dialect. The composition root wraps the pool this
   library constructs with `sqlate.Wrap` and the engine's dialect from `sqlate/postgres`, and the
@@ -46,6 +52,8 @@ principles:
   It imports no reclaimer; a library's reclaimer satisfies its interface.
 - `postgres` is the PostgreSQL provider: it constructs the pool over pgx's `database/sql` adapter
   from the configuration block.
+- `pgvector` resolves the pgvector distance metric an application's configuration names into
+  sqlate's metric table, and its package doc shows pgvector-go's vector types used directly.
 
 ## Development
 
