@@ -17,6 +17,8 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/standards-lab/go-core v0.12.0 h1:sqrzK6QSppEYpwvVAyiWgzNuOsjfK0Kwe86GPuZpHsU=
 github.com/standards-lab/go-core v0.12.0/go.mod h1:Yl/R+gM9YWczsePBCKXdPGh3FSdZ/5i8SapLIh3BDHU=
+github.com/standards-lab/go-database v0.13.0 h1:xBiN+gZE2Q0x+S/N0DgaDNqT9feHxcu43BrHXpFfLnI=
+github.com/standards-lab/go-database v0.13.0/go.mod h1:M4jca1wtAP4MUDAdLa+lgvBGAzyfc8A1EdpVaQssXfc=
 github.com/standards-lab/sqlate v0.8.0 h1:G1uUIWmc2DxJz5YhtBvIlftfURnb3b2RKsYB59Wa03Y=
 github.com/standards-lab/sqlate v0.8.0/go.mod h1:pikNmGf/z3x46SBWFXgt/xKIDZuquSgCoXy5OWBFFR4=
 github.com/standards-lab/sqlate/postgres v0.9.0 h1:l6PXEZ3GQM4+0zekxlSONhyHjpQU8g8StAS16bBqzZE=
